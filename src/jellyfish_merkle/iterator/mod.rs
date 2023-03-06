@@ -13,11 +13,11 @@
 mod iterator_test;
 
 use super::{
-    blob::Blob,
+    smt_object::{SMTObject, Key, Value},
     nibble::Nibble,
     nibble_path::NibblePath,
     node_type::{InternalNode, Node, NodeKey},
-    RawKey, TreeReader,
+    TreeReader, hash::PlainCryptoHash,
 };
 use anyhow::{format_err, Result};
 use super::hash::HashValue;
@@ -94,7 +94,7 @@ impl NodeVisitInfo {
 }
 
 /// The `JellyfishMerkleIterator` implementation.
-pub struct JellyfishMerkleIterator<'a, K: RawKey, R: 'a + TreeReader<K>> {
+pub struct JellyfishMerkleIterator<'a, K, V, R: 'a + TreeReader<K,V>> {
     /// The storage engine from which we can read nodes using node keys.
     reader: &'a R,
 
@@ -109,23 +109,25 @@ pub struct JellyfishMerkleIterator<'a, K: RawKey, R: 'a + TreeReader<K>> {
     /// additional bit.
     done: bool,
 
-    raw_key: PhantomData<K>,
+    key: PhantomData<K>,
+    value: PhantomData<V>,
 }
 
-impl<'a, K, R> JellyfishMerkleIterator<'a, K, R>
+impl<'a, K, V, R> JellyfishMerkleIterator<'a, K, V, R>
 where
-    R: 'a + TreeReader<K>,
-    K: RawKey,
+    R: 'a + TreeReader<K,V>,
+    K: Key,V: Value,
 {
     /// Constructs a new iterator. This puts the internal state in the correct position, so the
     /// following `next` call will yield the smallest key that is greater or equal to
     /// `starting_key`.
-    pub fn new(reader: &'a R, state_root_hash: HashValue, starting_key: HashValue) -> Result<Self> {
+    pub fn new(reader: &'a R, state_root_hash: HashValue, starting_key: SMTObject<K>) -> Result<Self> {
         let mut parent_stack = vec![];
         let mut done = false;
 
         let mut current_node_key = state_root_hash;
-        let nibble_path = NibblePath::new(starting_key.to_vec());
+        let starting_key_hash = starting_key.crypto_hash();
+        let nibble_path = NibblePath::new(starting_key_hash.to_vec());
         let mut nibble_iter = nibble_path.nibbles();
 
         while let Node::Internal(internal_node) = reader.get_node(&current_node_key)? {
@@ -161,7 +163,8 @@ where
                         state_root_hash,
                         parent_stack,
                         done,
-                        raw_key: PhantomData,
+                        key: PhantomData,
+                        value: PhantomData,
                     });
                 }
             }
@@ -170,7 +173,7 @@ where
         match reader.get_node(&current_node_key)? {
             Node::Internal(_) => unreachable!("Should have reached the bottom of the tree."),
             Node::Leaf(leaf_node) => {
-                if leaf_node.raw_key().key_hash() < starting_key {
+                if leaf_node.key().crypto_hash() < starting_key_hash {
                     Self::cleanup_stack(&mut parent_stack);
                     if parent_stack.is_empty() {
                         done = true;
@@ -185,7 +188,8 @@ where
             state_root_hash,
             parent_stack,
             done,
-            raw_key: PhantomData,
+            key: PhantomData,
+            value: PhantomData,
         })
     }
 
@@ -213,12 +217,12 @@ where
     }
 }
 
-impl<'a, K, R> Iterator for JellyfishMerkleIterator<'a, K, R>
+impl<'a, K,V, R> Iterator for JellyfishMerkleIterator<'a, K,V, R>
 where
-    R: 'a + TreeReader<K>,
-    K: RawKey,
+    R: 'a + TreeReader<K,V>,
+    K: Key,V: Value,
 {
-    type Item = Result<(K, Blob)>;
+    type Item = Result<(SMTObject<K>, SMTObject<V>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.done {
@@ -234,7 +238,7 @@ where
                     // true in `new`). Return the node and mark `self.done` so next time we return
                     // None.
                     self.done = true;
-                    return Some(Ok((leaf_node.raw_key().clone(), leaf_node.blob().clone())));
+                    return Some(Ok((leaf_node.key().clone(), leaf_node.value().clone())));
                 }
                 Ok(Node::Internal(_)) => {
                     // This means `starting_key` is bigger than every key in this tree, or we have
@@ -265,7 +269,7 @@ where
                     self.parent_stack.push(visit_info);
                 }
                 Ok(Node::Leaf(leaf_node)) => {
-                    let ret = (leaf_node.raw_key().clone(), leaf_node.blob().clone());
+                    let ret = (leaf_node.key().clone(), leaf_node.value().clone());
                     Self::cleanup_stack(&mut self.parent_stack);
                     return Some(Ok(ret));
                 }
@@ -277,7 +281,7 @@ where
 }
 
 /// The `JellyfishMerkleIntoIterator` implementation.
-pub struct JellyfishMerkleIntoIterator<K: RawKey, R: TreeReader<K>> {
+pub struct JellyfishMerkleIntoIterator<K, V, R: TreeReader<K,V>> {
     /// The storage engine from which we can read nodes using node keys.
     reader: R,
 
@@ -292,13 +296,14 @@ pub struct JellyfishMerkleIntoIterator<K: RawKey, R: TreeReader<K>> {
     /// additional bit.
     done: bool,
 
-    raw_key: PhantomData<K>,
+    key: PhantomData<K>,
+    value: PhantomData<V>,
 }
 
-impl<K, R> JellyfishMerkleIntoIterator<K, R>
+impl<K,V, R> JellyfishMerkleIntoIterator<K, V, R>
 where
-    R: TreeReader<K>,
-    K: RawKey,
+    R: TreeReader<K,V>,
+    K: Key,V: Value,
 {
     /// Constructs a new iterator. This puts the internal state in the correct position, so the
     /// following `next` call will yield the smallest key that is greater or equal to
@@ -344,7 +349,8 @@ where
                         state_root_hash,
                         parent_stack,
                         done,
-                        raw_key: PhantomData,
+                        key: PhantomData,
+                        value: PhantomData,
                     });
                 }
             }
@@ -353,7 +359,7 @@ where
         match reader.get_node(&current_node_key)? {
             Node::Internal(_) => unreachable!("Should have reached the bottom of the tree."),
             Node::Leaf(leaf_node) => {
-                if leaf_node.raw_key().key_hash() < starting_key {
+                if leaf_node.key().crypto_hash() < starting_key {
                     Self::cleanup_stack(&mut parent_stack);
                     if parent_stack.is_empty() {
                         done = true;
@@ -368,7 +374,8 @@ where
             state_root_hash,
             parent_stack,
             done,
-            raw_key: PhantomData,
+            key: PhantomData,
+            value: PhantomData,
         })
     }
 
@@ -396,12 +403,12 @@ where
     }
 }
 
-impl<K, R> Iterator for JellyfishMerkleIntoIterator<K, R>
+impl<K,V, R> Iterator for JellyfishMerkleIntoIterator<K, V, R>
 where
-    R: TreeReader<K>,
-    K: RawKey,
+    R: TreeReader<K,V>,
+    K: Key,V: Value,
 {
-    type Item = Result<(K, Blob)>;
+    type Item = Result<(SMTObject<K>, SMTObject<V>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.done {
@@ -417,7 +424,7 @@ where
                     // true in `new`). Return the node and mark `self.done` so next time we return
                     // None.
                     self.done = true;
-                    return Some(Ok((leaf_node.raw_key().clone(), leaf_node.blob().clone())));
+                    return Some(Ok((leaf_node.key().clone(), leaf_node.value().clone())));
                 }
                 Ok(Node::Internal(_)) => {
                     // This means `starting_key` is bigger than every key in this tree, or we have
@@ -448,7 +455,7 @@ where
                     self.parent_stack.push(visit_info);
                 }
                 Ok(Node::Leaf(leaf_node)) => {
-                    let ret = (leaf_node.raw_key().clone(), leaf_node.blob().clone());
+                    let ret = (leaf_node.key().clone(), leaf_node.value().clone());
                     Self::cleanup_stack(&mut self.parent_stack);
                     return Some(Ok(ret));
                 }

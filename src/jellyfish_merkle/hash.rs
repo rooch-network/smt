@@ -9,6 +9,12 @@ use tiny_keccak::{Hasher, Sha3};
 use bytes::Bytes;
 use hex::FromHex;
 
+pub fn merkle_hash(left: HashValue, right: HashValue) -> HashValue{
+    let mut value = left.to_vec();
+    value.extend(right.to_vec());
+    HashValue::sha3_256_of(&value)
+}
+
 /// Output value of our hash function. Intentionally opaque for safety and modularity.
 #[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
 #[cfg_attr(any(test, feature = "fuzzing"), derive(Arbitrary))]
@@ -174,7 +180,7 @@ impl HashValue {
         if literal.is_empty() {
             return Err(HashValueParseError);
         }
-        let literal = literal.strip_prefix("0x").unwrap_or_else(|| literal);
+        let literal = literal.strip_prefix("0x").unwrap_or(literal);
         let hex_len = literal.len();
         // If the string is too short, pad it
         if hex_len < Self::LENGTH * 2 {
@@ -182,7 +188,7 @@ impl HashValue {
             for _ in 0..Self::LENGTH * 2 - hex_len {
                 hex_str.push('0');
             }
-            hex_str.push_str(&literal);
+            hex_str.push_str(literal);
             Self::from_hex(hex_str)
         } else {
             Self::from_hex(&literal)

@@ -1,7 +1,7 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use super::blob::Blob;
+use super::smt_object::{SMTObject, Key, Value};
 use super::node_type::{SparseMerkleInternalNode, SparseMerkleLeafNode};
 use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
@@ -47,11 +47,11 @@ impl SparseMerkleProof {
     /// `element_blob` exists in the Sparse Merkle Tree using the provided proof. Otherwise
     /// verifies the proof is a valid non-inclusion proof that shows this key doesn't exist in the
     /// tree.
-    pub fn verify(
+    pub fn verify<K: Key, V: Value>(
         &self,
         expected_root_hash: HashValue,
-        element_key: HashValue,
-        element_blob: Option<&Blob>,
+        element_key: K,
+        element_blob: Option<V>,
     ) -> Result<()> {
         ensure!(
             self.siblings.len() <= HashValue::LENGTH_IN_BITS,
@@ -59,19 +59,19 @@ impl SparseMerkleProof {
             HashValue::LENGTH_IN_BITS,
             self.siblings.len(),
         );
-
+        let element_key_hash = element_key.into_object().crypto_hash();
         match (element_blob, self.leaf) {
             (Some(blob), Some((proof_key, proof_value_hash))) => {
                 // This is an inclusion proof, so the key and value hash provided in the proof
                 // should match element_key and element_value_hash. `siblings` should prove the
                 // route from the leaf node to the root.
                 ensure!(
-                    element_key == proof_key,
+                    element_key_hash == proof_key,
                     "Keys do not match. Key in proof: {:x}. Expected key: {:x}.",
                     proof_key,
-                    element_key
+                    element_key_hash
                 );
-                let hash = blob.crypto_hash();
+                let hash = blob.into_object().crypto_hash();
                 ensure!(
                     hash == proof_value_hash,
                     "Value hashes do not match. Value hash in proof: {:x}. \
@@ -87,11 +87,11 @@ impl SparseMerkleProof {
                 // node represented by `proof_key` into a branch. `siblings` should prove the
                 // route from that leaf node to the root.
                 ensure!(
-                    element_key != proof_key,
+                    element_key_hash != proof_key,
                     "Expected non-inclusion proof, but key exists in proof.",
                 );
                 ensure!(
-                    element_key.common_prefix_bits_len(proof_key) >= self.siblings.len(),
+                    element_key_hash.common_prefix_bits_len(proof_key) >= self.siblings.len(),
                     "Key would not have ended up in the subtree where the provided key in proof \
                      is the only existing key, if it existed. So this is not a valid \
                      non-inclusion proof.",
@@ -113,7 +113,7 @@ impl SparseMerkleProof {
             .siblings
             .iter()
             .zip(
-                element_key
+                element_key_hash
                     .iter_bits()
                     .rev()
                     .skip(HashValue::LENGTH_IN_BITS - self.siblings.len()),
@@ -137,16 +137,16 @@ impl SparseMerkleProof {
 
     /// Update the leaf, and compute new root.
     /// Only available for non existence proof
-    pub fn update_leaf(
+    pub fn update_leaf<K: Key, V: Value>(
         &mut self,
-        element_key: HashValue,
-        element_blob: &Blob,
+        element_key: SMTObject<K>,
+        element_blob: SMTObject<V>,
     ) -> Result<HashValue> {
         let element_hash = element_blob.crypto_hash();
-
+        let element_key_hash = element_key.crypto_hash();
         let is_non_exists_proof = match self.leaf.as_ref() {
             None => true,
-            Some((leaf_key, _leaf_value)) => &element_key != leaf_key,
+            Some((leaf_key, _leaf_value)) => &element_key_hash != leaf_key,
         };
         ensure!(
             is_non_exists_proof,
@@ -155,7 +155,7 @@ impl SparseMerkleProof {
             self.leaf,
         );
 
-        let new_leaf_node = SparseMerkleLeafNode::new(element_key, element_hash);
+        let new_leaf_node = SparseMerkleLeafNode::new(element_key_hash, element_hash);
         let current_hash = new_leaf_node.crypto_hash();
         if let Some(leaf_node) = self
             .leaf
@@ -163,7 +163,7 @@ impl SparseMerkleProof {
             .map(|(leaf_key, leaf_value)| SparseMerkleLeafNode::new(*leaf_key, *leaf_value))
         {
             let mut new_siblings = vec![leaf_node.crypto_hash()];
-            let prefix_len = leaf_node.key.common_prefix_bits_len(element_key);
+            let prefix_len = leaf_node.key_hash.common_prefix_bits_len(element_key_hash);
 
             let place_holder_len = (prefix_len - self.siblings.len()) + 1;
             if place_holder_len > 0 {
@@ -176,7 +176,7 @@ impl SparseMerkleProof {
             .siblings
             .iter()
             .zip(
-                element_key
+                element_key_hash
                     .iter_bits()
                     .rev()
                     .skip(HashValue::LENGTH_IN_BITS - self.siblings.len()),
@@ -188,7 +188,7 @@ impl SparseMerkleProof {
                     SparseMerkleInternalNode::new(hash, *sibling_hash).crypto_hash()
                 }
             });
-        self.leaf = Some((element_key, element_hash));
+        self.leaf = Some((element_key_hash, element_hash));
         Ok(new_root_hash)
     }
 }

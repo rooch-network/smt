@@ -16,7 +16,8 @@
 
 #[cfg(test)]
 mod node_type_test;
-use super::{blob::Blob, nibble::Nibble, RawKey};
+use super::smt_object::{Key, Value};
+use super::{smt_object::SMTObject, nibble::Nibble};
 use anyhow::{ensure, Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::{FromPrimitive, ToPrimitive};
@@ -25,7 +26,7 @@ use num_traits::cast::FromPrimitive;
 use proptest::{collection::hash_map, prelude::*};
 #[cfg(any(test, feature = "fuzzing"))]
 use proptest_derive::Arbitrary;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize,Serialize};
 use super::hash::*;
 use std::cell::Cell;
 use std::{
@@ -408,53 +409,24 @@ pub(crate) fn get_child_and_sibling_half_start(n: Nibble, height: u8) -> (u8, u8
     (child_half_start, sibling_half_start)
 }
 
-//TODO use serde helper's serialize_binary
-pub fn serialize_raw_key<K, S>(key: &K, s: S) -> std::result::Result<S::Ok, S::Error>
-where
-    K: RawKey,
-    S: Serializer,
-{
-    use serde::ser::Error;
-    s.serialize_bytes(key.encode_key().map_err(S::Error::custom)?.as_slice())
-}
-
-pub fn deserialize_raw_key<'de, K, D>(d: D) -> std::result::Result<K, D::Error>
-where
-    K: RawKey,
-    D: Deserializer<'de>,
-{
-    use serde::de::Error;
-    let bytes = serde_bytes::ByteBuf::deserialize(d)?;
-    K::decode_key(bytes.as_ref()).map_err(D::Error::custom)
-}
 /// Represents an account.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct LeafNode<K: RawKey> {
-    /// The origin key associated with this leaf node's Blob.
-    #[serde(
-        deserialize_with = "deserialize_raw_key",
-        serialize_with = "serialize_raw_key"
-    )]
-    raw_key: K,
-    /// The hash of the blob.
-    blob_hash: HashValue,
-    /// The blob associated with `raw_key`.
-    blob: Blob,
-    #[serde(skip)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LeafNode<K, V>{
+    /// The origin key associated with this leaf node's Value.
+    key: SMTObject<K>,
+    /// The blob value associated with `key`.
+    value: SMTObject<V>,
     cached_hash: Cell<Option<HashValue>>,
 }
 
-impl<K> LeafNode<K>
-where
-    K: RawKey,
+impl<K,V> LeafNode<K, V>
+where K: Key, V: Value
 {
     /// Creates a new leaf node.
-    pub fn new(raw_key: K, blob: Blob) -> Self {
-        let blob_hash = blob.crypto_hash();
+    pub fn new<NK:Into<SMTObject<K>>, NV: Into<SMTObject<V>>>(key: NK, value: NV) -> Self {
         Self {
-            raw_key,
-            blob_hash,
-            blob,
+            key: key.into(),
+            value: value.into(),
             cached_hash: Cell::new(None),
         }
     }
@@ -470,19 +442,29 @@ where
         }
     }
 
-    /// Gets the raw key
-    pub fn raw_key(&self) -> &K {
-        &self.raw_key
+     /// Gets the key
+    pub fn key(&self) -> &SMTObject<K> {
+        &self.key
+    }
+
+    /// Gets the origin key
+    pub fn origin_key(&self) -> &K {
+        &self.key.origin
+    }
+
+    /// Gets the hash of origin key.
+    pub fn key_hash(&self) -> HashValue {
+        self.key.crypto_hash()
     }
 
     /// Gets the hash of associated blob.
-    pub fn blob_hash(&self) -> HashValue {
-        self.blob_hash
+    pub fn value_hash(&self) -> HashValue {
+        self.value.crypto_hash()
     }
 
     /// Gets the associated blob itself.
-    pub fn blob(&self) -> &Blob {
-        &self.blob
+    pub fn value(&self) -> &SMTObject<V> {
+        &self.value
     }
 
     pub fn serialize(&self, binary: &mut Vec<u8>) -> Result<()> {
@@ -493,15 +475,45 @@ where
     pub fn deserialize(data: &[u8]) -> Result<Self> {
         bcs::from_bytes(data).map_err(|e|e.into())
     }
+
+    pub fn into(self) -> (SMTObject<K>, SMTObject<V>){
+        (self.key, self.value)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct RawKV{
+    key: Vec<u8>,
+    value: Vec<u8>,
+}
+
+impl<K,V> Serialize for LeafNode<K,V> where K:Key, V:Value{
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        let wrapper = RawKV{
+            key: self.key.raw.clone(),
+            value: self.value.raw.clone(),
+        };
+        wrapper.serialize(serializer)
+    }
+}
+
+impl<'de, K,V> Deserialize<'de> for LeafNode<K,V> where K:Key, V:Value{
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de> {
+        let wrapper = RawKV::deserialize(deserializer)?;
+        Ok(LeafNode::new(K::from_raw(wrapper.key).map_err(serde::de::Error::custom)?, V::from_raw(wrapper.value).map_err(serde::de::Error::custom)?))
+    }
 }
 
 /// Computes the hash of a [`LeafNode`].
-impl<K> PlainCryptoHash for LeafNode<K>
-where
-    K: RawKey,
+impl<K,V> PlainCryptoHash for LeafNode<K,V>
+where K:Key, V:Value
 {
     fn crypto_hash(&self) -> HashValue {
-        SparseMerkleLeafNode::new(self.raw_key.key_hash(), self.blob_hash).crypto_hash()
+        SparseMerkleLeafNode::new(self.key.crypto_hash(), self.value.crypto_hash()).crypto_hash()
     }
 }
 
@@ -515,18 +527,16 @@ enum NodeTag {
 
 /// The concrete node type of [`JellyfishMerkleTree`](super::JellyfishMerkleTree).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Node<K: RawKey> {
+pub enum Node<K,V> {
     /// Represents `null`.
     Null,
     /// A wrapper of [`InternalNode`].
     Internal(InternalNode),
     /// A wrapper of [`LeafNode`].
-    Leaf(LeafNode<K>),
+    Leaf(LeafNode<K, V>),
 }
 
-impl<K> From<InternalNode> for Node<K>
-where
-    K: RawKey,
+impl<K, V> From<InternalNode> for Node<K, V>
 {
     fn from(node: InternalNode) -> Self {
         Node::Internal(node)
@@ -539,18 +549,15 @@ impl From<InternalNode> for Children {
     }
 }
 
-impl<K> From<LeafNode<K>> for Node<K>
-where
-    K: RawKey,
+impl<K,V> From<LeafNode<K,V>> for Node<K,V>
 {
-    fn from(node: LeafNode<K>) -> Self {
+    fn from(node: LeafNode<K,V>) -> Self {
         Node::Leaf(node)
     }
 }
 
-impl<K> Node<K>
-where
-    K: RawKey,
+impl<K, V> Node<K, V>
+where K: Key, V: Value
 {
     /// Creates the [`Null`](Node::Null) variant.
     pub fn new_null() -> Self {
@@ -563,8 +570,8 @@ where
     }
 
     /// Creates the [`Leaf`](Node::Leaf) variant.
-    pub fn new_leaf(raw_key: K, blob: Blob) -> Self {
-        Node::Leaf(LeafNode::new(raw_key, blob))
+    pub fn new_leaf<NK:Into<SMTObject<K>>, NV: Into<SMTObject<V>>>(key: NK, value: NV) -> Self {
+        Node::Leaf(LeafNode::new(key, value))
     }
 
     /// Returns `true` if the node is a leaf node.
@@ -601,7 +608,7 @@ where
     }
 
     /// Recovers from serialized bytes in physical storage.
-    pub fn decode(val: &[u8]) -> Result<Node<K>> {
+    pub fn decode(val: &[u8]) -> Result<Node<K, V>> {
         if val.is_empty() {
             return Err(NodeDecodeError::EmptyInput.into());
         }
@@ -616,7 +623,9 @@ where
     }
 }
 
-impl<K> PlainCryptoHash for Node<K> where K: RawKey {
+impl<K, V> PlainCryptoHash for Node<K, V>
+where K: Key, V: Value
+{
     fn crypto_hash(&self) -> HashValue {
         self.hash()
     }
@@ -639,25 +648,25 @@ impl SparseMerkleInternalNode {
 
 impl PlainCryptoHash for SparseMerkleInternalNode {
     fn crypto_hash(&self) -> HashValue {
-       todo!()
+       merkle_hash(self.left_child, self.right_child)
     }
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct SparseMerkleLeafNode {
-    pub key: HashValue,
+    pub key_hash: HashValue,
     pub value_hash: HashValue,
 }
 
 impl SparseMerkleLeafNode {
-    pub fn new(key: HashValue, value_hash: HashValue) -> Self {
-        SparseMerkleLeafNode { key, value_hash }
+    pub fn new(key_hash: HashValue, value_hash: HashValue) -> Self {
+        SparseMerkleLeafNode { key_hash, value_hash }
     }
 }
 
 impl PlainCryptoHash for SparseMerkleLeafNode {
     fn crypto_hash(&self) -> HashValue {
-        todo!()
+        merkle_hash(self.key_hash, self.value_hash)
     }
 }
 
