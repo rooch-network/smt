@@ -16,8 +16,8 @@
 
 #[cfg(test)]
 mod node_type_test;
-use super::smt_object::{Key, Value};
-use super::{smt_object::SMTObject, nibble::Nibble};
+use crate::{SMTObject, Key, Value};
+use super::{nibble::Nibble};
 use anyhow::{ensure, Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::{FromPrimitive, ToPrimitive};

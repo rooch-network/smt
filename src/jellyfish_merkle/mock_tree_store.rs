@@ -6,8 +6,9 @@
 
 use super::{
     node_type::{Node, NodeKey},
-    NodeBatch, StaleNodeIndex, TreeReader, TreeUpdateBatch, TreeWriter, smt_object::{Key, Value, SMTObject, EncodeToObject, DecodeToObject},
+    NodeBatch, StaleNodeIndex, TreeReader, TreeUpdateBatch, TreeWriter,
 };
+use crate::{Key,Value, SMTObject, EncodeToObject, DecodeToObject};
 use anyhow::{bail, ensure, Result};
 use serde::{Serialize, Deserialize};
 use super::hash::HashValue;

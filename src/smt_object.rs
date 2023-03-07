@@ -1,12 +1,17 @@
+// Copyright (c) RoochNetwork
+// SPDX-License-Identifier: Apache-2.0
+
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #[cfg(any(test, feature = "fuzzing"))]
 use proptest_derive::Arbitrary;
 use serde::{Deserialize, Serialize, de::{DeserializeOwned, self}};
-use super::hash::*;
+use crate::{jellyfish_merkle::hash::SMTHash, HashValue};
 use std::{fmt, cell::Cell};
 use anyhow::Result;
+
+
 
 pub trait Key: std::cmp::Ord + Clone + EncodeToObject + DecodeToObject{
 }
@@ -19,6 +24,27 @@ pub trait Value: Clone + EncodeToObject + DecodeToObject{
 
 impl<T: Clone + Serialize + EncodeToObject + DecodeToObject> Value for T {
 }
+
+pub trait EncodeToObject{
+    fn into_object(self) -> SMTObject<Self> where Self: std::marker::Sized;
+}
+
+pub trait DecodeToObject{
+    fn from_raw(raw: Vec<u8>) -> Result<SMTObject<Self>> where Self: std::marker::Sized;
+}
+
+impl<T> EncodeToObject for T where T: Serialize{
+    fn into_object(self) -> SMTObject<Self> {
+        SMTObject::from_origin(self)
+    }
+}
+
+impl<T> DecodeToObject for T where T: DeserializeOwned{
+    fn from_raw(raw: Vec<u8>) -> Result<SMTObject<Self>> {
+        SMTObject::from_raw(raw)
+    }
+}
+
 
 #[derive(Clone)]
 #[cfg_attr(any(test, feature = "fuzzing"), derive(Arbitrary))]
@@ -133,25 +159,5 @@ impl<T> SMTHash for SMTObject<T>{
                 hash
             }
         }
-    }
-}
-
-pub trait EncodeToObject{
-    fn into_object(self) -> SMTObject<Self> where Self: std::marker::Sized;
-}
-
-pub trait DecodeToObject{
-    fn from_raw(raw: Vec<u8>) -> Result<SMTObject<Self>> where Self: std::marker::Sized;
-}
-
-impl<T> EncodeToObject for T where T: Serialize{
-    fn into_object(self) -> SMTObject<Self> {
-        SMTObject::from_origin(self)
-    }
-}
-
-impl<T> DecodeToObject for T where T: DeserializeOwned{
-    fn from_raw(raw: Vec<u8>) -> Result<SMTObject<Self>> {
-        SMTObject::from_raw(raw)
     }
 }

@@ -12,8 +12,8 @@
 #[cfg(test)]
 mod iterator_test;
 
+use crate::{SMTObject, Key, Value};
 use super::{
-    smt_object::{SMTObject, Key, Value},
     nibble::Nibble,
     nibble_path::NibblePath,
     node_type::{InternalNode, Node, NodeKey},
@@ -22,6 +22,7 @@ use super::{
 use anyhow::{format_err, Result};
 use super::hash::HashValue;
 use std::marker::PhantomData;
+
 
 /// `NodeVisitInfo` keeps track of the status of an internal node during the iteration process. It
 /// indicates which ones of its children have been visited.

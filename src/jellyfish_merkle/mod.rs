@@ -73,7 +73,6 @@
 //! [`InternalNode`]: node_type/struct.InternalNode.html
 //! [`LeafNode`]: node_type/struct.LeafNode.html
 
-pub mod smt_object;
 pub mod iterator;
 #[cfg(test)]
 mod jellyfish_merkle_test;
@@ -89,7 +88,6 @@ pub mod hash;
 
 use anyhow::{bail, ensure, format_err, Result};
 use backtrace::Backtrace;
-use smt_object::SMTObject;
 use nibble_path::{skip_common_prefix, NibbleIterator, NibblePath};
 use node_type::{Child, Children, InternalNode, LeafNode, Node, NodeKey};
 use proof::{SparseMerkleProof, SparseMerkleRangeProof};
@@ -98,8 +96,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 use tree_cache::TreeCache;
 use hash::{HashValue,SMTHash};
-
-use self::smt_object::{Key, Value};
+use crate::{Key, Value, SMTObject};
 
 /// The hardcoded maximum height of a [`JellyfishMerkleTree`] in nibbles.
 pub const ROOT_NIBBLE_HEIGHT: usize = HashValue::LENGTH * 2;

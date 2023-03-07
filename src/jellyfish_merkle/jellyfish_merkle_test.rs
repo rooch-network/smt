@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::jellyfish_merkle::mock_tree_store::{TestKey, MockTestStore};
-use crate::jellyfish_merkle::smt_object::EncodeToObject;
+use crate::{EncodeToObject};
 use super::{*, mock_tree_store::TestValue};
 use super::nibble::Nibble;
 use super::node_type::SparseMerkleInternalNode;

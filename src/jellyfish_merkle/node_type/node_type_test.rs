@@ -4,8 +4,7 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::jellyfish_merkle::{mock_tree_store::{TestValue, TestKey}, smt_object::EncodeToObject};
-
+use crate::{EncodeToObject, jellyfish_merkle::{mock_tree_store::{TestValue, TestKey}}};
 use super::*;
 use super::super::nibble_path::NibblePath;
 use proptest::prelude::*;

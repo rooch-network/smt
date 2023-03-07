@@ -74,8 +74,9 @@ mod tree_cache_test;
 
 use super::{
     node_type::{Node, NodeKey},
-    StaleNodeIndex, TreeReader, TreeUpdateBatch, hash::SMTHash, smt_object::{Key, Value},
+    StaleNodeIndex, TreeReader, TreeUpdateBatch, hash::SMTHash,
 };
+use crate::{Key, Value};
 use anyhow::{bail, Result};
 use super::hash::{SPARSE_MERKLE_PLACEHOLDER_HASH, HashValue};
 use std::{

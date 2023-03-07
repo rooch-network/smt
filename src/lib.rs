@@ -1,14 +1,20 @@
 // Copyright (c) RoochNetwork
 // SPDX-License-Identifier: Apache-2.0
 
+// Copyright (c) The Starcoin Core Contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use std::{marker::PhantomData, collections::{BTreeMap, HashMap}};
 use parking_lot::{Mutex, RwLock};
-use jellyfish_merkle::{hash::{HashValue, SPARSE_MERKLE_PLACEHOLDER_HASH}, proof::SparseMerkleProof, TreeReader, smt_object::{Key, SMTObject, Value, EncodeToObject}, JellyfishMerkleTree, TreeUpdateBatch, node_type::{NodeKey, Node}, StaleNodeIndex};
+use jellyfish_merkle::{TreeReader, JellyfishMerkleTree, TreeUpdateBatch, node_type::{NodeKey, Node}, StaleNodeIndex};
 use anyhow::Result;
 use std::ops::DerefMut;
 
-pub mod jellyfish_merkle;
+mod jellyfish_merkle;
+pub mod smt_object;
 
+pub use jellyfish_merkle::{hash::{HashValue,SPARSE_MERKLE_PLACEHOLDER_HASH},proof::SparseMerkleProof};
+pub use smt_object::{Key, SMTObject, Value, EncodeToObject, DecodeToObject};
 
 /// Store the tree nodes
 pub trait NodeStore{
@@ -140,6 +146,7 @@ where
     }
 }
 
+//TODO remove the cache, and support batch update in the jellyfish merkle tree
 pub struct SMTree<K, V, NS>{
     node_store: NS,
     storage_root_hash: RwLock<HashValue>,

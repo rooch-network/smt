@@ -1,7 +1,7 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use super::smt_object::{SMTObject, Key, Value};
+use crate::{SMTObject, Key, Value};
 use super::node_type::{SparseMerkleInternalNode, SparseMerkleLeafNode};
 use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
