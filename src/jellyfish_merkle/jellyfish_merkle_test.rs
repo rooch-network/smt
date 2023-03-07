@@ -134,16 +134,16 @@ fn test_insert_at_leaf_with_internal_created() {
     let mut children = HashMap::new();
     children.insert(
         Nibble::from(0),
-        Child::new(leaf1.crypto_hash(), true /* is_leaf */),
+        Child::new(leaf1.merkle_hash(), true /* is_leaf */),
     );
     children.insert(
         Nibble::from(15),
-        Child::new(leaf2.crypto_hash(), true /* is_leaf */),
+        Child::new(leaf2.merkle_hash(), true /* is_leaf */),
     );
     let internal = Node::new_internal(children);
-    assert_eq!(db.get_node(&leaf1.crypto_hash()).unwrap(), leaf1);
-    assert_eq!(db.get_node(&leaf2.crypto_hash()).unwrap(), leaf2);
-    assert_eq!(db.get_node(&internal.crypto_hash()).unwrap(), internal);
+    assert_eq!(db.get_node(&leaf1.merkle_hash()).unwrap(), leaf1);
+    assert_eq!(db.get_node(&leaf2.merkle_hash()).unwrap(), leaf2);
+    assert_eq!(db.get_node(&internal.merkle_hash()).unwrap(), internal);
 }
 
 #[test]
@@ -184,9 +184,9 @@ fn test_insert_at_leaf_with_multiple_internals_created() {
         let mut children = HashMap::new();
         children.insert(
             Nibble::from(0),
-            Child::new(leaf1.crypto_hash(), true /* is_leaf */),
+            Child::new(leaf1.merkle_hash(), true /* is_leaf */),
         );
-        children.insert(Nibble::from(1), Child::new(leaf2.crypto_hash(), true));
+        children.insert(Nibble::from(1), Child::new(leaf2.merkle_hash(), true));
         Node::new_internal(children)
     };
 
@@ -194,13 +194,13 @@ fn test_insert_at_leaf_with_multiple_internals_created() {
         let mut children = HashMap::new();
         children.insert(
             Nibble::from(0),
-            Child::new(internal.crypto_hash(), false /* is_leaf */),
+            Child::new(internal.merkle_hash(), false /* is_leaf */),
         );
         Node::new_internal(children)
     };
 
-    assert_eq!(db.get_node(&internal.crypto_hash()).unwrap(), internal);
-    assert_eq!(db.get_node(&root_internal.crypto_hash()).unwrap(), root_internal,);
+    assert_eq!(db.get_node(&internal.merkle_hash()).unwrap(), internal);
+    assert_eq!(db.get_node(&root_internal.merkle_hash()).unwrap(), root_internal,);
 
     // 3. Update leaf2 with new value
     let value2_update = TestValue::from(vec![5u8, 6u8]);
@@ -328,7 +328,7 @@ fn test_batch_insertion() {
         // ```test
         //   1(root)
         // ```
-        db.purge_stale_nodes(key1.into_object().crypto_hash()).unwrap();
+        db.purge_stale_nodes(key1.into_object().merkle_hash()).unwrap();
         // ```text
         //   1 (p)           internal(a)
         //           ->     /        \
@@ -336,7 +336,7 @@ fn test_batch_insertion() {
         // add 3, prune 1
         // ```
         assert_eq!(db.num_nodes(), 23);
-        db.purge_stale_nodes(key2.into_object().crypto_hash()).unwrap();
+        db.purge_stale_nodes(key2.into_object().merkle_hash()).unwrap();
         // ```text
         //     internal(p)             internal(a)
         //    /        \              /        \
@@ -346,7 +346,7 @@ fn test_batch_insertion() {
         // add 4, prune 2
         // ```
         assert_eq!(db.num_nodes(), 23);
-        db.purge_stale_nodes(key3.into_object().crypto_hash()).unwrap();
+        db.purge_stale_nodes(key3.into_object().merkle_hash()).unwrap();
         // ```text
         //         internal(p)                internal(a)
         //        /        \                 /        \
@@ -356,7 +356,7 @@ fn test_batch_insertion() {
         // add 3, prune 2
         // ```
         assert_eq!(db.num_nodes(), 23);
-        db.purge_stale_nodes(key4.into_object().crypto_hash()).unwrap();
+        db.purge_stale_nodes(key4.into_object().merkle_hash()).unwrap();
         // ```text
         //            internal(p)                         internal(a)
         //           /        \                          /        \
@@ -374,7 +374,7 @@ fn test_batch_insertion() {
         // add 8, prune 3
         // ```
         assert_eq!(db.num_nodes(), 23);
-        db.purge_stale_nodes(key5.into_object().crypto_hash()).unwrap();
+        db.purge_stale_nodes(key5.into_object().merkle_hash()).unwrap();
         // ```text
         //                  internal(p)                             internal(a)
         //                 /        \                              /        \
@@ -392,7 +392,7 @@ fn test_batch_insertion() {
         // add 5, prune 4
         // ```
         assert_eq!(db.num_nodes(), 23);
-        db.purge_stale_nodes(key6.into_object().crypto_hash()).unwrap();
+        db.purge_stale_nodes(key6.into_object().merkle_hash()).unwrap();
         // ```text
         //                         internal(p)                               internal(a)
         //                        /        \                                /        \
@@ -860,7 +860,7 @@ fn verify_range_proof<K: Key, V: Value>(
     let mut btree1 = BTreeMap::new();
     for (key, blob) in &btree {
         let leaf = LeafNode::new(key.clone(), blob.clone());
-        btree1.insert(leaf.key_hash(), leaf.crypto_hash());
+        btree1.insert(leaf.key_hash(), leaf.merkle_hash());
     }
     // Using the above example, `last_proven_key` is `e`. We look at the path from root to `e`.
     // For each 0-bit, there should be a sibling in the proof. And we use the path from root to
@@ -869,7 +869,7 @@ fn verify_range_proof<K: Key, V: Value>(
         .keys()
         .last()
         .expect("We are proving at least one key.").clone().into_object();
-    let last_proven_key_hash = last_proven_key.crypto_hash();
+    let last_proven_key_hash = last_proven_key.merkle_hash();
     for (i, sibling) in last_proven_key_hash
         .iter_bits()
         .enumerate()
@@ -953,7 +953,7 @@ fn compute_root_hash_impl(kvs: Vec<(&[bool], HashValue)>) -> HashValue {
         }
     }
 
-    SparseMerkleInternalNode::new(left_hash, right_hash).crypto_hash()
+    SparseMerkleInternalNode::new(left_hash, right_hash).merkle_hash()
 }
 
 /// Reduces the problem by removing the first bit of every key.
@@ -992,7 +992,7 @@ where
 //             .ok_or_else(|| format_err!("strip_prefix error"))?,
 //     )?;
 //     let blob = Blob::from(buf);
-//     let hash = blob.crypto_hash();
+//     let hash = blob.merkle_hash();
 
 //     let name = starcoin_crypto::_serde_name::trace_name::<Blob>()
 //         .expect("The `CryptoHasher` macro only applies to structs and enums");

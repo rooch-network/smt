@@ -17,7 +17,7 @@ use super::{
     nibble::Nibble,
     nibble_path::NibblePath,
     node_type::{InternalNode, Node, NodeKey},
-    TreeReader, hash::PlainCryptoHash,
+    TreeReader, hash::SMTHash,
 };
 use anyhow::{format_err, Result};
 use super::hash::HashValue;
@@ -126,7 +126,7 @@ where
         let mut done = false;
 
         let mut current_node_key = state_root_hash;
-        let starting_key_hash = starting_key.crypto_hash();
+        let starting_key_hash = starting_key.merkle_hash();
         let nibble_path = NibblePath::new(starting_key_hash.to_vec());
         let mut nibble_iter = nibble_path.nibbles();
 
@@ -173,7 +173,7 @@ where
         match reader.get_node(&current_node_key)? {
             Node::Internal(_) => unreachable!("Should have reached the bottom of the tree."),
             Node::Leaf(leaf_node) => {
-                if leaf_node.key().crypto_hash() < starting_key_hash {
+                if leaf_node.key().merkle_hash() < starting_key_hash {
                     Self::cleanup_stack(&mut parent_stack);
                     if parent_stack.is_empty() {
                         done = true;
@@ -359,7 +359,7 @@ where
         match reader.get_node(&current_node_key)? {
             Node::Internal(_) => unreachable!("Should have reached the bottom of the tree."),
             Node::Leaf(leaf_node) => {
-                if leaf_node.key().crypto_hash() < starting_key {
+                if leaf_node.key().merkle_hash() < starting_key {
                     Self::cleanup_stack(&mut parent_stack);
                     if parent_stack.is_empty() {
                         done = true;

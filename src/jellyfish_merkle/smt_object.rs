@@ -123,8 +123,8 @@ impl<T> From<T> for SMTObject<T> where T: EncodeToObject{
     }
 }
 
-impl<T> PlainCryptoHash for SMTObject<T>{
-    fn crypto_hash(&self) -> HashValue {
+impl<T> SMTHash for SMTObject<T>{
+    fn merkle_hash(&self) -> HashValue {
         match self.cached_hash.get() {
             Some(hash) => hash,
             None => {

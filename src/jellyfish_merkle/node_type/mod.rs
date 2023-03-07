@@ -117,13 +117,21 @@ pub struct InternalNode {
 /// height
 /// Note: @ denotes placeholder hash.
 /// ```
-impl PlainCryptoHash for InternalNode {
-    fn crypto_hash(&self) -> HashValue {
-        self.merkle_hash(
-            0,  // start index
-            16, // the number of leaves in the subtree of which we want the hash of root
-            self.generate_bitmaps(),
-        )
+impl SMTHash for InternalNode {
+    fn merkle_hash(&self) -> HashValue {
+        match self.cached_hash.get() {
+            Some(hash) => hash,
+            None => {
+                let hash = self.make_hash(
+                    0,  // start index
+                    16, // the number of leaves in the subtree of which we want the hash of root
+                    self.generate_bitmaps(),
+                );
+                self.cached_hash.set(Some(hash));
+                hash
+            }
+        } 
+        
     }
 }
 
@@ -163,17 +171,6 @@ impl InternalNode {
         Self {
             children,
             cached_hash: Cell::new(None),
-        }
-    }
-
-    pub fn cached_hash(&self) -> HashValue {
-        match self.cached_hash.get() {
-            Some(hash) => hash,
-            None => {
-                let hash = self.crypto_hash();
-                self.cached_hash.set(Some(hash));
-                hash
-            }
         }
     }
 
@@ -278,7 +275,7 @@ impl InternalNode {
         (bitmaps.0 & mask, bitmaps.1 & mask)
     }
 
-    fn merkle_hash(
+    fn make_hash(
         &self,
         start: u8,
         width: u8,
@@ -305,13 +302,13 @@ impl InternalNode {
                 .unwrap()
                 .hash
         } else {
-            let left_child = self.merkle_hash(start, width / 2, (existence_bitmap, leaf_bitmap));
-            let right_child = self.merkle_hash(
+            let left_child = self.make_hash(start, width / 2, (existence_bitmap, leaf_bitmap));
+            let right_child = self.make_hash(
                 start + width / 2,
                 width / 2,
                 (existence_bitmap, leaf_bitmap),
             );
-            SparseMerkleInternalNode::new(left_child, right_child).crypto_hash()
+            SparseMerkleInternalNode::new(left_child, right_child).merkle_hash()
         }
     }
 
@@ -346,7 +343,7 @@ impl InternalNode {
             let width = 1 << h;
             let (child_half_start, sibling_half_start) = get_child_and_sibling_half_start(n, h);
             // Compute the root hash of the subtree rooted at the sibling of `r`.
-            siblings.push(self.merkle_hash(
+            siblings.push(self.make_hash(
                 sibling_half_start,
                 width,
                 (existence_bitmap, leaf_bitmap),
@@ -435,7 +432,7 @@ where K: Key, V: Value
         match self.cached_hash.get() {
             Some(hash) => hash,
             None => {
-                let hash = self.crypto_hash();
+                let hash = self.merkle_hash();
                 self.cached_hash.set(Some(hash));
                 hash
             }
@@ -454,12 +451,12 @@ where K: Key, V: Value
 
     /// Gets the hash of origin key.
     pub fn key_hash(&self) -> HashValue {
-        self.key.crypto_hash()
+        self.key.merkle_hash()
     }
 
     /// Gets the hash of associated blob.
     pub fn value_hash(&self) -> HashValue {
-        self.value.crypto_hash()
+        self.value.merkle_hash()
     }
 
     /// Gets the associated blob itself.
@@ -509,11 +506,11 @@ impl<'de, K,V> Deserialize<'de> for LeafNode<K,V> where K:Key, V:Value{
 }
 
 /// Computes the hash of a [`LeafNode`].
-impl<K,V> PlainCryptoHash for LeafNode<K,V>
+impl<K,V> SMTHash for LeafNode<K,V>
 where K:Key, V:Value
 {
-    fn crypto_hash(&self) -> HashValue {
-        SparseMerkleLeafNode::new(self.key.crypto_hash(), self.value.crypto_hash()).crypto_hash()
+    fn merkle_hash(&self) -> HashValue {
+        SparseMerkleLeafNode::new(self.key.merkle_hash(), self.value.merkle_hash()).merkle_hash()
     }
 }
 
@@ -598,15 +595,6 @@ where K: Key, V: Value
         Ok(out)
     }
 
-    /// Computes the hash of nodes.
-    pub fn hash(&self) -> HashValue {
-        match self {
-            Node::Null => *SPARSE_MERKLE_PLACEHOLDER_HASH,
-            Node::Internal(internal_node) => internal_node.cached_hash(),
-            Node::Leaf(leaf_node) => leaf_node.cached_hash(),
-        }
-    }
-
     /// Recovers from serialized bytes in physical storage.
     pub fn decode(val: &[u8]) -> Result<Node<K, V>> {
         if val.is_empty() {
@@ -623,11 +611,15 @@ where K: Key, V: Value
     }
 }
 
-impl<K, V> PlainCryptoHash for Node<K, V>
+impl<K, V> SMTHash for Node<K, V>
 where K: Key, V: Value
 {
-    fn crypto_hash(&self) -> HashValue {
-        self.hash()
+    fn merkle_hash(&self) -> HashValue {
+        match self {
+            Node::Null => *SPARSE_MERKLE_PLACEHOLDER_HASH,
+            Node::Internal(internal_node) => internal_node.merkle_hash(),
+            Node::Leaf(leaf_node) => leaf_node.merkle_hash(),
+        }
     }
 }
 
@@ -646,8 +638,8 @@ impl SparseMerkleInternalNode {
     }
 }
 
-impl PlainCryptoHash for SparseMerkleInternalNode {
-    fn crypto_hash(&self) -> HashValue {
+impl SMTHash for SparseMerkleInternalNode {
+    fn merkle_hash(&self) -> HashValue {
        merkle_hash(self.left_child, self.right_child)
     }
 }
@@ -664,8 +656,8 @@ impl SparseMerkleLeafNode {
     }
 }
 
-impl PlainCryptoHash for SparseMerkleLeafNode {
-    fn crypto_hash(&self) -> HashValue {
+impl SMTHash for SparseMerkleLeafNode {
+    fn merkle_hash(&self) -> HashValue {
         merkle_hash(self.key_hash, self.value_hash)
     }
 }

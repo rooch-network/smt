@@ -59,7 +59,7 @@ impl SparseMerkleProof {
             HashValue::LENGTH_IN_BITS,
             self.siblings.len(),
         );
-        let element_key_hash = element_key.into_object().crypto_hash();
+        let element_key_hash = element_key.into_object().merkle_hash();
         match (element_blob, self.leaf) {
             (Some(blob), Some((proof_key, proof_value_hash))) => {
                 // This is an inclusion proof, so the key and value hash provided in the proof
@@ -71,7 +71,7 @@ impl SparseMerkleProof {
                     proof_key,
                     element_key_hash
                 );
-                let hash = blob.into_object().crypto_hash();
+                let hash = blob.into_object().merkle_hash();
                 ensure!(
                     hash == proof_value_hash,
                     "Value hashes do not match. Value hash in proof: {:x}. \
@@ -107,7 +107,7 @@ impl SparseMerkleProof {
         let current_hash = self
             .leaf
             .map_or(*SPARSE_MERKLE_PLACEHOLDER_HASH, |(key, value_hash)| {
-                SparseMerkleLeafNode::new(key, value_hash).crypto_hash()
+                SparseMerkleLeafNode::new(key, value_hash).merkle_hash()
             });
         let actual_root_hash = self
             .siblings
@@ -120,9 +120,9 @@ impl SparseMerkleProof {
             )
             .fold(current_hash, |hash, (sibling_hash, bit)| {
                 if bit {
-                    SparseMerkleInternalNode::new(*sibling_hash, hash).crypto_hash()
+                    SparseMerkleInternalNode::new(*sibling_hash, hash).merkle_hash()
                 } else {
-                    SparseMerkleInternalNode::new(hash, *sibling_hash).crypto_hash()
+                    SparseMerkleInternalNode::new(hash, *sibling_hash).merkle_hash()
                 }
             });
         ensure!(
@@ -142,8 +142,8 @@ impl SparseMerkleProof {
         element_key: SMTObject<K>,
         element_blob: SMTObject<V>,
     ) -> Result<HashValue> {
-        let element_hash = element_blob.crypto_hash();
-        let element_key_hash = element_key.crypto_hash();
+        let element_hash = element_blob.merkle_hash();
+        let element_key_hash = element_key.merkle_hash();
         let is_non_exists_proof = match self.leaf.as_ref() {
             None => true,
             Some((leaf_key, _leaf_value)) => &element_key_hash != leaf_key,
@@ -156,13 +156,13 @@ impl SparseMerkleProof {
         );
 
         let new_leaf_node = SparseMerkleLeafNode::new(element_key_hash, element_hash);
-        let current_hash = new_leaf_node.crypto_hash();
+        let current_hash = new_leaf_node.merkle_hash();
         if let Some(leaf_node) = self
             .leaf
             .as_ref()
             .map(|(leaf_key, leaf_value)| SparseMerkleLeafNode::new(*leaf_key, *leaf_value))
         {
-            let mut new_siblings = vec![leaf_node.crypto_hash()];
+            let mut new_siblings = vec![leaf_node.merkle_hash()];
             let prefix_len = leaf_node.key_hash.common_prefix_bits_len(element_key_hash);
 
             let place_holder_len = (prefix_len - self.siblings.len()) + 1;
@@ -183,9 +183,9 @@ impl SparseMerkleProof {
             )
             .fold(current_hash, |hash, (sibling_hash, bit)| {
                 if bit {
-                    SparseMerkleInternalNode::new(*sibling_hash, hash).crypto_hash()
+                    SparseMerkleInternalNode::new(*sibling_hash, hash).merkle_hash()
                 } else {
-                    SparseMerkleInternalNode::new(hash, *sibling_hash).crypto_hash()
+                    SparseMerkleInternalNode::new(hash, *sibling_hash).merkle_hash()
                 }
             });
         self.leaf = Some((element_key_hash, element_hash));

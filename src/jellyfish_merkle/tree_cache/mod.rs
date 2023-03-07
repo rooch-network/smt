@@ -74,7 +74,7 @@ mod tree_cache_test;
 
 use super::{
     node_type::{Node, NodeKey},
-    StaleNodeIndex, TreeReader, TreeUpdateBatch, hash::PlainCryptoHash, smt_object::{Key, Value},
+    StaleNodeIndex, TreeReader, TreeUpdateBatch, hash::SMTHash, smt_object::{Key, Value},
 };
 use anyhow::{bail, Result};
 use super::hash::{SPARSE_MERKLE_PLACEHOLDER_HASH, HashValue};
@@ -237,7 +237,7 @@ where
         let root_hash = self
             .get_node(root_node_key)
             .unwrap_or_else(|_| unreachable!("Root node with key {:?} must exist", root_node_key))
-            .crypto_hash();
+            .merkle_hash();
         self.frozen_cache.root_hashes.push(root_hash);
         self.frozen_cache.node_cache.extend(self.node_cache.drain());
 

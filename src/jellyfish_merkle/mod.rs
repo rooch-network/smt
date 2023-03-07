@@ -97,7 +97,7 @@ use log::{debug};
 use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 use tree_cache::TreeCache;
-use hash::{HashValue,PlainCryptoHash};
+use hash::{HashValue,SMTHash};
 
 use self::smt_object::{Key, Value};
 
@@ -308,7 +308,7 @@ where
     }
 
     fn put(key: SMTObject<K>, blob: Option<SMTObject<V>>, tree_cache: &mut TreeCache<R, K,V>) -> Result<()> {
-        let key_hash = key.crypto_hash();
+        let key_hash = key.merkle_hash();
         let nibble_path = NibblePath::new(key_hash.to_vec());
 
         // Get the root node. If this is the first operation, it would get the root node from the
@@ -418,7 +418,7 @@ where
 
         if children.is_empty() {
             let empty_node = Node::new_null();
-            Ok((empty_node.crypto_hash(), empty_node))
+            Ok((empty_node.merkle_hash(), empty_node))
         } else if children.len() == 1
             && children
                 .values()
@@ -432,8 +432,8 @@ where
         } else {
             let new_internal_node: Node<K,V> = InternalNode::new(children).into();
             // Cache this new internal node.
-            tree_cache.put_node(new_internal_node.crypto_hash(), new_internal_node.clone())?;
-            Ok((new_internal_node.crypto_hash(), new_internal_node))
+            tree_cache.put_node(new_internal_node.merkle_hash(), new_internal_node.clone())?;
+            Ok((new_internal_node.merkle_hash(), new_internal_node))
         }
     }
 
@@ -483,12 +483,12 @@ where
             if blob.is_none() {
                 tree_cache.delete_node(&node_key, true);
                 let empty_node = Node::new_null();
-                return Ok((empty_node.crypto_hash(), empty_node));
+                return Ok((empty_node.merkle_hash(), empty_node));
             }
             let blob = blob.expect("blob must some at here");
             // The new leaf node will have the same nibble_path with a new version as node_key.
             // if the blob are same, return directly
-            if blob.crypto_hash() == existing_leaf_node.value_hash() {
+            if blob.merkle_hash() == existing_leaf_node.value_hash() {
                 return Ok((node_key, Node::Leaf(existing_leaf_node)));
             } else {
                 // Else create the new leaf node with the same address but new blob content.
@@ -519,19 +519,19 @@ where
         let mut children = Children::new();
         children.insert(
             existing_leaf_index,
-            Child::new(existing_leaf_node.crypto_hash(), true /* is_leaf */),
+            Child::new(existing_leaf_node.merkle_hash(), true /* is_leaf */),
         );
 
         let (_, new_leaf_node) = Self::create_leaf_node(key, blob, tree_cache)?;
         children.insert(
             new_leaf_index,
-            Child::new(new_leaf_node.crypto_hash(), true /* is_leaf */),
+            Child::new(new_leaf_node.merkle_hash(), true /* is_leaf */),
         );
 
         let internal_node = InternalNode::new(children);
         let mut next_internal_node = internal_node.clone();
         let internal_node: Node<K,V> = internal_node.into();
-        tree_cache.put_node(internal_node.crypto_hash(), internal_node)?;
+        tree_cache.put_node(internal_node.merkle_hash(), internal_node)?;
 
         for _i in 0..num_common_nibbles_below_internal {
             let nibble = common_nibble_path
@@ -540,16 +540,16 @@ where
             let mut children = Children::new();
             children.insert(
                 nibble,
-                Child::new(next_internal_node.crypto_hash(), false /* is_leaf */),
+                Child::new(next_internal_node.merkle_hash(), false /* is_leaf */),
             );
             let internal_node = InternalNode::new(children);
             next_internal_node = internal_node.clone();
             let internal_node: Node<K,V> = internal_node.into();
-            tree_cache.put_node(internal_node.crypto_hash(), internal_node)?;
+            tree_cache.put_node(internal_node.merkle_hash(), internal_node)?;
         }
 
         let next_internal_node: Node<K,V> = next_internal_node.into();
-        Ok((next_internal_node.crypto_hash(), next_internal_node))
+        Ok((next_internal_node.merkle_hash(), next_internal_node))
     }
 
     /// Helper function for creating leaf nodes. Returns the newly created leaf node.
@@ -561,7 +561,7 @@ where
         // Get the underlying bytes of nibble_iter which must be a key, i.e., hashed account address
         // with `HashValue::LENGTH` bytes.
         let new_leaf_node = Node::new_leaf(key, blob);
-        let node_key = new_leaf_node.crypto_hash();
+        let node_key = new_leaf_node.merkle_hash();
         tree_cache.put_node(node_key, new_leaf_node.clone())?;
         Ok((node_key, new_leaf_node))
     }
@@ -579,7 +579,7 @@ where
 
         // We use key's hash as nibble_path, not origin key bytes, make smt more distributed
         let key = key.into();
-        let path_bytes = key.crypto_hash().to_vec();
+        let path_bytes = key.merkle_hash().to_vec();
         let nibble_path = NibblePath::new(path_bytes);
         let mut nibble_iter = nibble_path.nibbles();
 
@@ -609,7 +609,7 @@ where
                 }
                 Node::Leaf(leaf_node) => {
                     return Ok((
-                        if leaf_node.key_hash() == key.crypto_hash() {
+                        if leaf_node.key_hash() == key.merkle_hash() {
                             Some(leaf_node.value().clone())
                         } else {
                             None
@@ -644,7 +644,7 @@ where
         state_root_hash: HashValue,
         rightmost_key_to_prove: SMTObject<K>,
     ) -> Result<SparseMerkleRangeProof> {
-        let key_hash = rightmost_key_to_prove.crypto_hash();
+        let key_hash = rightmost_key_to_prove.merkle_hash();
         let (account, proof) = self.get_with_proof(state_root_hash, rightmost_key_to_prove)?;
         ensure!(account.is_some(), "rightmost_key_to_prove must exist.");
         

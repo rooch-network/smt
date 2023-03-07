@@ -11,7 +11,7 @@ use super::super::{node_type::Node, NodeKey};
 
 fn random_leaf_with_key() -> (Node<TestKey,TestValue>, NodeKey) {
     let node = Node::new_leaf(TestKey::random(), TestValue::random());
-    let node_key = node.crypto_hash();
+    let node_key = node.merkle_hash();
     (node, node_key)
 }
 
