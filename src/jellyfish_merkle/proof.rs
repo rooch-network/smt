@@ -1,7 +1,7 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{SMTObject, Key, Value};
+use crate::{Key, Value};
 use super::node_type::{SparseMerkleInternalNode, SparseMerkleLeafNode};
 use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
@@ -47,7 +47,7 @@ impl SparseMerkleProof {
     /// `element_blob` exists in the Sparse Merkle Tree using the provided proof. Otherwise
     /// verifies the proof is a valid non-inclusion proof that shows this key doesn't exist in the
     /// tree.
-    pub fn verify<K: Key, V: Value>(
+    pub fn verify<K:Key, V:Value>(
         &self,
         expected_root_hash: HashValue,
         element_key: K,
@@ -59,7 +59,9 @@ impl SparseMerkleProof {
             HashValue::LENGTH_IN_BITS,
             self.siblings.len(),
         );
-        let element_key_hash = element_key.into_object().merkle_hash();
+        let element_key = element_key.into_object();
+        let element_key_hash = element_key.merkle_hash();
+        
         match (element_blob, self.leaf) {
             (Some(blob), Some((proof_key, proof_value_hash))) => {
                 // This is an inclusion proof, so the key and value hash provided in the proof
@@ -109,6 +111,7 @@ impl SparseMerkleProof {
             .map_or(*SPARSE_MERKLE_PLACEHOLDER_HASH, |(key, value_hash)| {
                 SparseMerkleLeafNode::new(key, value_hash).merkle_hash()
             });
+    
         let actual_root_hash = self
             .siblings
             .iter()
@@ -139,19 +142,19 @@ impl SparseMerkleProof {
     /// Only available for non existence proof
     pub fn update_leaf<K: Key, V: Value>(
         &mut self,
-        element_key: SMTObject<K>,
-        element_blob: SMTObject<V>,
+        element_key: K,
+        element_blob: V,
     ) -> Result<HashValue> {
-        let element_hash = element_blob.merkle_hash();
-        let element_key_hash = element_key.merkle_hash();
+        let element_key_hash = element_key.into_object().merkle_hash();
+        let element_hash = element_blob.into_object().merkle_hash();
         let is_non_exists_proof = match self.leaf.as_ref() {
             None => true,
             Some((leaf_key, _leaf_value)) => &element_key_hash != leaf_key,
         };
         ensure!(
             is_non_exists_proof,
-            "Only non existence proof support update leaf, got element_key: {:?} leaf: {:?}",
-            element_key,
+            "Only non existence proof support update leaf, got element_key hash: {:?} leaf: {:?}",
+            element_key_hash,
             self.leaf,
         );
 

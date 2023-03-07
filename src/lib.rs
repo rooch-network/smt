@@ -410,5 +410,9 @@ mod tests{
         let (result, proof) = smt.get_with_proof(key.to_string()).unwrap();
         assert_eq!(result.unwrap(), value.to_string());
         assert!(proof.verify(smt.root_hash(), key.to_string(), Some(value.to_string())).is_ok());
+
+        let (result, proof) = smt.get_with_proof("key2".to_string()).unwrap();
+        assert_eq!(result, None);
+        assert!(proof.verify::<String,String>(smt.root_hash(), "key2".to_string(), None).is_ok());
     }
 }

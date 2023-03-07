@@ -137,12 +137,6 @@ impl<T> AsRef<T> for SMTObject<T>{
     }
 }
 
-impl<T> From<SMTObject<T>> for Vec<u8> {
-    fn from(origin: SMTObject<T>) -> Vec<u8> {
-        origin.raw
-    }
-}
-
 impl<T> From<T> for SMTObject<T> where T: EncodeToObject{
     fn from(origin: T) -> SMTObject<T> {
         origin.into_object()
@@ -161,3 +155,5 @@ impl<T> SMTHash for SMTObject<T>{
         }
     }
 }
+
+

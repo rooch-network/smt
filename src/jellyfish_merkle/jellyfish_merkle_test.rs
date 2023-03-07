@@ -460,21 +460,21 @@ fn test_non_existence() {
         let non_existing_key = update_nibble(&key1, 0, 1);
         let (value, proof) = tree.get_with_proof(root, non_existing_key).unwrap();
         assert_eq!(value, None);
-        assert!(proof.verify(root, non_existing_key.into_object(), value).is_ok());
+        assert!(proof.verify::<TestKey,TestValue>(root, non_existing_key, None).is_ok());
     }
     // 2. Non-existing node at non-root internal node
     {
         let non_existing_key = update_nibble(&key1, 1, 15);
         let (value, proof) = tree.get_with_proof(root, non_existing_key).unwrap();
         assert_eq!(value, None);
-        assert!(proof.verify(root, non_existing_key.into_object(), value).is_ok());
+        assert!(proof.verify::<TestKey,TestValue>(root, non_existing_key, None).is_ok());
     }
     // 3. Non-existing node at leaf node
     {
         let non_existing_key = update_nibble(&key1, 2, 4);
         let (value, proof) = tree.get_with_proof(root, non_existing_key).unwrap();
         assert_eq!(value, None);
-        assert!(proof.verify(root, non_existing_key.into_object(), value).is_ok());
+        assert!(proof.verify::<TestKey,TestValue>(root, non_existing_key, None).is_ok());
     }
 }
 
@@ -619,7 +619,7 @@ fn many_keys_get_proof_and_verify_tree_root(seed: &[u8], num_keys: usize) {
     for (k, v) in &kvs {
         let (value, proof) = tree.get_with_proof(root, k.clone()).unwrap();
         assert_eq!(value.unwrap(), *v);
-        assert!(proof.verify(root, k.clone().into_object(), Some(v.clone().into_object())).is_ok());
+        assert!(proof.verify(root, k.clone().origin, Some(v.clone().origin)).is_ok());
     }
 }
 
@@ -673,7 +673,7 @@ fn many_versions_get_proof_and_verify_tree_root(seed: &[u8], num_versions: usize
         let history_root = roots[random_version];
         let (value, proof) = tree.get_with_proof(history_root, *k).unwrap();
         assert_eq!(value.unwrap().origin, *v);
-        assert!(proof.verify(history_root, (*k).into_object(), Some(v.clone().into_object())).is_ok());
+        assert!(proof.verify(history_root, *k, Some(v.clone())).is_ok());
     }
 
     for (i, (k, _, v)) in kvs.iter().enumerate() {
@@ -681,7 +681,7 @@ fn many_versions_get_proof_and_verify_tree_root(seed: &[u8], num_versions: usize
         let history_root = roots[random_version];
         let (value, proof) = tree.get_with_proof(history_root, *k).unwrap();
         assert_eq!(value.unwrap().origin, *v);
-        assert!(proof.verify(history_root, (*k).into_object(), Some(v.clone().into_object())).is_ok());
+        assert!(proof.verify(history_root, *k, Some(v.clone())).is_ok());
     }
 }
 
@@ -771,10 +771,10 @@ fn test_existent_keys_impl<'a>(
 ) {
     for (key, value) in existent_kvs {
         let (value_in_tree, proof) = tree.get_with_proof(root_hash, *key).unwrap();
-        assert!(proof
-            .verify(root_hash, key.into_object(), value_in_tree.clone())
-            .is_ok());
         assert_eq!(value_in_tree.unwrap().origin, *value);
+        assert!(proof
+            .verify(root_hash, *key, Some(value.clone()))
+            .is_ok());
     }
 }
 
@@ -785,10 +785,10 @@ fn test_nonexistent_keys_impl<'a>(
 ) {
     for key in nonexistent_keys {
         let (value_in_tree, proof) = tree.get_with_proof(root_hash, *key).unwrap();
-        assert!(proof
-            .verify(root_hash, (*key).into_object(), value_in_tree.clone())
-            .is_ok());
         assert!(value_in_tree.is_none());
+        assert!(proof
+            .verify(root_hash, *key, value_in_tree.map(|obj|obj.origin))
+            .is_ok());
     }
 }
 
@@ -800,10 +800,10 @@ fn test_nonexistent_key_value_update_impl<'a>(
 ) -> HashValue {
     let (key, value) = noneexistent_kv;
     let (value_in_tree, mut proof) = tree.get_with_proof(root_hash, key).unwrap();
-    assert!(proof.verify(root_hash, key.into_object(), value_in_tree.clone()).is_ok());
     assert!(value_in_tree.is_none());
-
-    let new_root_by_proof = proof.update_leaf(key.into_object(), value.clone().into_object()).unwrap();
+    assert!(proof.verify(root_hash, key, value_in_tree.map(|obj|obj.origin)).is_ok());
+    
+    let new_root_by_proof = proof.update_leaf(key, value.clone()).unwrap();
 
     let (root, batch) = tree
         .put_blob_set(Some(root_hash), vec![(key.into_object(), value.clone().into_object())])

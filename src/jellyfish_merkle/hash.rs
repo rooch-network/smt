@@ -1,5 +1,6 @@
 
 use std::{fmt::{self, Debug}, str::FromStr};
+use more_asserts::debug_assert_lt;
 use once_cell::sync::Lazy;
 #[cfg(any(test, feature = "fuzzing"))]
 use proptest_derive::Arbitrary;
@@ -341,9 +342,8 @@ impl<'a> HashValueBitIterator<'a> {
 
     /// Returns the `index`-th bit in the bytes.
     fn get_bit(&self, index: usize) -> bool {
-        debug_assert!(index < self.pos.end); // assumed precondition
-        debug_assert!(self.hash_bytes.len() == HashValue::LENGTH); // invariant
-        debug_assert!(self.pos.end == self.hash_bytes.len() * 8); // invariant
+        debug_assert_eq!(self.hash_bytes.len(), HashValue::LENGTH); // invariant
+        debug_assert_lt!(index, HashValue::LENGTH_IN_BITS); // assumed precondition
         let pos = index / 8;
         let bit = 7 - index % 8;
         (self.hash_bytes[pos] >> bit) & 1 != 0
