@@ -4,10 +4,12 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-
-use crate::EncodeToObject;
-use super::{mock_tree_store::{TestKey, TestValue, MockTestStore},JellyfishMerkleTree};
 use super::hash::HashValue;
+use super::{
+    mock_tree_store::{MockTestStore, TestKey, TestValue},
+    JellyfishMerkleTree,
+};
+use crate::EncodeToObject;
 use std::collections::HashMap;
 
 /// Computes the key immediately after `key`.
@@ -32,11 +34,15 @@ pub fn init_mock_db(kvs: &HashMap<TestKey, TestValue>) -> (MockTestStore, Option
     assert!(!kvs.is_empty());
 
     let db = MockTestStore::new_test();
-    let tree: JellyfishMerkleTree<TestKey, TestValue, MockTestStore> = JellyfishMerkleTree::new(&db);
+    let tree: JellyfishMerkleTree<TestKey, TestValue, MockTestStore> =
+        JellyfishMerkleTree::new(&db);
     let mut current_state_root = None;
     for (_i, (key, value)) in kvs.iter().enumerate() {
         let (_root_hash, write_batch) = tree
-            .insert_all(current_state_root, vec![(key.clone().into_object(), value.clone().into_object())])
+            .insert_all(
+                current_state_root,
+                vec![(key.clone().into_object(), value.clone().into_object())],
+            )
             .unwrap();
         db.write_tree_update_batch(write_batch).unwrap();
         current_state_root = Some(_root_hash);

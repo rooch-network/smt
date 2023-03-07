@@ -4,75 +4,102 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::{jellyfish_merkle::hash::SMTHash, HashValue};
+use anyhow::Result;
 #[cfg(any(test, feature = "fuzzing"))]
 use proptest_derive::Arbitrary;
-use serde::{Deserialize, Serialize, de::{DeserializeOwned, self}};
-use crate::{jellyfish_merkle::hash::SMTHash, HashValue};
-use std::{fmt, cell::Cell};
-use anyhow::Result;
+use serde::{
+    de::{self, DeserializeOwned},
+    Deserialize, Serialize,
+};
+use std::{cell::Cell, fmt};
 
+pub trait Key: std::cmp::Ord + Clone + EncodeToObject + DecodeToObject {}
 
+impl<T: std::cmp::Ord + Clone + EncodeToObject + DecodeToObject> Key for T {}
 
-pub trait Key: std::cmp::Ord + Clone + EncodeToObject + DecodeToObject{
+pub trait Value: Clone + EncodeToObject + DecodeToObject {}
+
+impl<T: Clone + Serialize + EncodeToObject + DecodeToObject> Value for T {}
+
+pub trait EncodeToObject {
+    fn into_object(self) -> SMTObject<Self>
+    where
+        Self: std::marker::Sized;
 }
 
-impl<T: std::cmp::Ord + Clone + EncodeToObject + DecodeToObject> Key for T {
+pub trait DecodeToObject {
+    fn from_raw(raw: Vec<u8>) -> Result<SMTObject<Self>>
+    where
+        Self: std::marker::Sized;
 }
 
-pub trait Value: Clone + EncodeToObject + DecodeToObject{
-}
-
-impl<T: Clone + Serialize + EncodeToObject + DecodeToObject> Value for T {
-}
-
-pub trait EncodeToObject{
-    fn into_object(self) -> SMTObject<Self> where Self: std::marker::Sized;
-}
-
-pub trait DecodeToObject{
-    fn from_raw(raw: Vec<u8>) -> Result<SMTObject<Self>> where Self: std::marker::Sized;
-}
-
-impl<T> EncodeToObject for T where T: Serialize{
+impl<T> EncodeToObject for T
+where
+    T: Serialize,
+{
     fn into_object(self) -> SMTObject<Self> {
         SMTObject::from_origin(self)
     }
 }
 
-impl<T> DecodeToObject for T where T: DeserializeOwned{
+impl<T> DecodeToObject for T
+where
+    T: DeserializeOwned,
+{
     fn from_raw(raw: Vec<u8>) -> Result<SMTObject<Self>> {
         SMTObject::from_raw(raw)
     }
 }
 
-
 #[derive(Clone)]
 #[cfg_attr(any(test, feature = "fuzzing"), derive(Arbitrary))]
-pub struct SMTObject<T>{
+pub struct SMTObject<T> {
     pub origin: T,
     pub raw: Vec<u8>,
     cached_hash: Cell<Option<HashValue>>,
 }
 
-impl<T> SMTObject<T>{
-    
-    pub fn new(origin:T, raw: Vec<u8>) -> Self {
-        SMTObject { origin, raw , cached_hash: Cell::new(None)}
+impl<T> SMTObject<T> {
+    pub fn new(origin: T, raw: Vec<u8>) -> Self {
+        SMTObject {
+            origin,
+            raw,
+            cached_hash: Cell::new(None),
+        }
     }
 
     /// A helper constructor for tests which allows passing in a precomputed hash.
     pub(crate) fn new_for_test(origin: T, raw: Vec<u8>, hash: HashValue) -> Self {
-        SMTObject { origin, raw , cached_hash: Cell::new(Some(hash))}
+        SMTObject {
+            origin,
+            raw,
+            cached_hash: Cell::new(Some(hash)),
+        }
     }
 
-    pub fn from_origin(origin: T) -> Self where T: Serialize{
+    pub fn from_origin(origin: T) -> Self
+    where
+        T: Serialize,
+    {
         let raw = bcs::to_bytes(&origin).expect("serialize should not fail");
-        SMTObject { origin, raw , cached_hash: Cell::new(None)}
+        SMTObject {
+            origin,
+            raw,
+            cached_hash: Cell::new(None),
+        }
     }
 
-    pub fn from_raw(raw: Vec<u8>) -> Result<Self> where T: DeserializeOwned{
+    pub fn from_raw(raw: Vec<u8>) -> Result<Self>
+    where
+        T: DeserializeOwned,
+    {
         let origin = bcs::from_bytes(&raw)?;
-        Ok(SMTObject { origin, raw , cached_hash: Cell::new(None)})
+        Ok(SMTObject {
+            origin,
+            raw,
+            cached_hash: Cell::new(None),
+        })
     }
 }
 
@@ -111,15 +138,20 @@ impl<T> fmt::Debug for SMTObject<T> {
 impl<T> Serialize for SMTObject<T> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         serializer.serialize_bytes(&self.raw)
     }
 }
 
-impl <'de, T> Deserialize<'de> for SMTObject<T> where T:DecodeToObject{
+impl<'de, T> Deserialize<'de> for SMTObject<T>
+where
+    T: DecodeToObject,
+{
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de> {
+        D: serde::Deserializer<'de>,
+    {
         let raw = <Vec<u8>>::deserialize(deserializer)?;
         T::from_raw(raw).map_err(de::Error::custom)
     }
@@ -131,19 +163,22 @@ impl<T> AsRef<[u8]> for SMTObject<T> {
     }
 }
 
-impl<T> AsRef<T> for SMTObject<T>{
+impl<T> AsRef<T> for SMTObject<T> {
     fn as_ref(&self) -> &T {
         &self.origin
     }
 }
 
-impl<T> From<T> for SMTObject<T> where T: EncodeToObject{
+impl<T> From<T> for SMTObject<T>
+where
+    T: EncodeToObject,
+{
     fn from(origin: T) -> SMTObject<T> {
         origin.into_object()
     }
 }
 
-impl<T> SMTHash for SMTObject<T>{
+impl<T> SMTHash for SMTObject<T> {
     fn merkle_hash(&self) -> HashValue {
         match self.cached_hash.get() {
             Some(hash) => hash,
@@ -155,5 +190,3 @@ impl<T> SMTHash for SMTObject<T>{
         }
     }
 }
-
-

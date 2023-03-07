@@ -73,6 +73,7 @@
 //! [`InternalNode`]: node_type/struct.InternalNode.html
 //! [`LeafNode`]: node_type/struct.LeafNode.html
 
+pub mod hash;
 pub mod iterator;
 #[cfg(test)]
 mod jellyfish_merkle_test;
@@ -83,20 +84,18 @@ pub mod node_type;
 pub mod proof;
 pub mod test_helper;
 pub mod tree_cache;
-pub mod hash;
 
-
+use crate::{Key, SMTObject, Value};
 use anyhow::{bail, ensure, format_err, Result};
 use backtrace::Backtrace;
+use hash::{HashValue, SMTHash};
+use log::debug;
 use nibble_path::{skip_common_prefix, NibbleIterator, NibblePath};
 use node_type::{Child, Children, InternalNode, LeafNode, Node, NodeKey};
 use proof::{SparseMerkleProof, SparseMerkleRangeProof};
-use log::{debug};
 use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 use tree_cache::TreeCache;
-use hash::{HashValue,SMTHash};
-use crate::{Key, Value, SMTObject};
 
 /// The hardcoded maximum height of a [`JellyfishMerkleTree`] in nibbles.
 pub const ROOT_NIBBLE_HEIGHT: usize = HashValue::LENGTH * 2;
@@ -106,7 +105,7 @@ pub const ROOT_NIBBLE_HEIGHT: usize = HashValue::LENGTH * 2;
 /// and underlying storage holding nodes.
 pub trait TreeReader<K, V> {
     /// Gets node given a node key. Returns error if the node does not exist.
-    fn get_node(&self, node_key: &NodeKey) -> Result<Node<K,V>> {
+    fn get_node(&self, node_key: &NodeKey) -> Result<Node<K, V>> {
         self.get_node_option(node_key)?.ok_or_else(|| {
             let backtrace = format!("{:#?}", Backtrace::new());
             debug!("backtrace: {}", backtrace);
@@ -115,17 +114,16 @@ pub trait TreeReader<K, V> {
     }
 
     /// Gets node given a node key. Returns `None` if the node does not exist.
-    fn get_node_option(&self, node_key: &NodeKey) -> Result<Option<Node<K,V>>>;
-
+    fn get_node_option(&self, node_key: &NodeKey) -> Result<Option<Node<K, V>>>;
 }
 
-pub trait TreeWriter<K,V> {
+pub trait TreeWriter<K, V> {
     /// Writes a node batch into storage.
-    fn write_node_batch(&self, node_batch: &NodeBatch<K,V>) -> Result<()>;
+    fn write_node_batch(&self, node_batch: &NodeBatch<K, V>) -> Result<()>;
 }
 
 /// Node batch that will be written into db atomically with other batches.
-pub type NodeBatch<K,V> = BTreeMap<NodeKey, Node<K,V>>;
+pub type NodeBatch<K, V> = BTreeMap<NodeKey, Node<K, V>>;
 /// [`StaleNodeIndex`](struct.StaleNodeIndex.html) batch that will be written into db atomically
 /// with other batches.
 pub type StaleNodeIndexBatch = BTreeSet<StaleNodeIndex>;
@@ -145,15 +143,14 @@ pub struct StaleNodeIndex {
 /// the incremental updates of a tree and pruning indices after applying a write set,
 /// which is a vector of `hashed_account_address` and `new_account_state_blob` pairs.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TreeUpdateBatch<K,V> {
-    pub node_batch: NodeBatch<K,V>,
+pub struct TreeUpdateBatch<K, V> {
+    pub node_batch: NodeBatch<K, V>,
     pub stale_node_index_batch: StaleNodeIndexBatch,
     pub num_new_leaves: usize,
     pub num_stale_leaves: usize,
 }
 
-impl<K,V> Default for TreeUpdateBatch<K,V>
-{
+impl<K, V> Default for TreeUpdateBatch<K, V> {
     fn default() -> Self {
         Self {
             node_batch: NodeBatch::default(),
@@ -165,16 +162,17 @@ impl<K,V> Default for TreeUpdateBatch<K,V>
 }
 
 /// The Jellyfish Merkle tree data structure. See [`crate`] for description.
-pub struct JellyfishMerkleTree<'a, K, V, R: 'a + TreeReader<K,V>> {
+pub struct JellyfishMerkleTree<'a, K, V, R: 'a + TreeReader<K, V>> {
     reader: &'a R,
     key: PhantomData<K>,
     value: PhantomData<V>,
 }
 
-impl<'a, K, V, R> JellyfishMerkleTree<'a, K,V, R>
+impl<'a, K, V, R> JellyfishMerkleTree<'a, K, V, R>
 where
-    K: Key, V: Value,
-    R: 'a + TreeReader<K,V>,
+    K: Key,
+    V: Value,
+    R: 'a + TreeReader<K, V>,
 {
     /// Creates a `JellyfishMerkleTree` backed by the given [`TreeReader`](trait.TreeReader.html).
     pub fn new(reader: &'a R) -> Self {
@@ -190,7 +188,7 @@ where
         &self,
         state_root_hash: Option<HashValue>,
         blob_set: Vec<(SMTObject<K>, SMTObject<V>)>,
-    ) -> Result<(HashValue, TreeUpdateBatch<K,V>)> {
+    ) -> Result<(HashValue, TreeUpdateBatch<K, V>)> {
         let blob_set = blob_set
             .into_iter()
             .map(|(k, v)| (k, Some(v)))
@@ -199,18 +197,26 @@ where
     }
 
     #[cfg(test)]
-    pub fn print_tree<PK:Into<SMTObject<K>>>(&self, state_root_hash: HashValue, start_key: PK) -> Result<()> {
-        let iter = self::iterator::JellyfishMerkleIterator::new(self.reader, state_root_hash, start_key.into())?;
+    pub fn print_tree<PK: Into<SMTObject<K>>>(
+        &self,
+        state_root_hash: HashValue,
+        start_key: PK,
+    ) -> Result<()> {
+        let iter = self::iterator::JellyfishMerkleIterator::new(
+            self.reader,
+            state_root_hash,
+            start_key.into(),
+        )?;
         iter.print()
     }
 
     /// Delete a key from the tree. If the key is not found in the tree, nothing happens.
     #[cfg(test)]
-    pub fn delete<DK:Into<SMTObject<K>>>(
+    pub fn delete<DK: Into<SMTObject<K>>>(
         &self,
         state_root_hash: Option<HashValue>,
         key: DK,
-    ) -> Result<(HashValue, TreeUpdateBatch<K,V>)> {
+    ) -> Result<(HashValue, TreeUpdateBatch<K, V>)> {
         self.updates(state_root_hash, vec![(key.into(), None)])
     }
 
@@ -219,7 +225,7 @@ where
         &self,
         state_root_hash: Option<HashValue>,
         blob_set: Vec<(SMTObject<K>, SMTObject<V>)>,
-    ) -> Result<(HashValue, TreeUpdateBatch<K,V>)> {
+    ) -> Result<(HashValue, TreeUpdateBatch<K, V>)> {
         let blob_set = blob_set
             .into_iter()
             .map(|(k, v)| (k, Some(v)))
@@ -231,7 +237,7 @@ where
         &self,
         state_root_hash: Option<HashValue>,
         blob_set: Vec<(SMTObject<K>, Option<SMTObject<V>>)>,
-    ) -> Result<(HashValue, TreeUpdateBatch<K,V>)> {
+    ) -> Result<(HashValue, TreeUpdateBatch<K, V>)> {
         let (root_hashes, tree_update_batch) = self.puts(state_root_hash, vec![blob_set])?;
         assert_eq!(
             root_hashes.len(),
@@ -286,7 +292,7 @@ where
         &self,
         state_root_hash: Option<HashValue>,
         blob_sets: Vec<Vec<(SMTObject<K>, Option<SMTObject<V>>)>>,
-    ) -> Result<(Vec<HashValue>, TreeUpdateBatch<K,V>)> {
+    ) -> Result<(Vec<HashValue>, TreeUpdateBatch<K, V>)> {
         let mut tree_cache = TreeCache::new(self.reader, state_root_hash);
         for (_idx, blob_set) in blob_sets.into_iter().enumerate() {
             assert!(
@@ -304,7 +310,11 @@ where
         Ok(tree_cache.into())
     }
 
-    fn put(key: SMTObject<K>, blob: Option<SMTObject<V>>, tree_cache: &mut TreeCache<R, K,V>) -> Result<()> {
+    fn put(
+        key: SMTObject<K>,
+        blob: Option<SMTObject<V>>,
+        tree_cache: &mut TreeCache<R, K, V>,
+    ) -> Result<()> {
         let key_hash = key.merkle_hash();
         let nibble_path = NibblePath::new(key_hash.to_vec());
 
@@ -331,7 +341,7 @@ where
         key: SMTObject<K>,
         blob: Option<SMTObject<V>>,
         tree_cache: &mut TreeCache<R, K, V>,
-    ) -> Result<(NodeKey, Node<K,V>)> {
+    ) -> Result<(NodeKey, Node<K, V>)> {
         let node = tree_cache.get_node(&node_key)?;
         match node {
             Node::Internal(internal_node) => Self::insert_at_internal_node(
@@ -365,7 +375,7 @@ where
         key: SMTObject<K>,
         blob: Option<SMTObject<V>>,
         tree_cache: &mut TreeCache<R, K, V>,
-    ) -> Result<(NodeKey, Node<K,V>)> {
+    ) -> Result<(NodeKey, Node<K, V>)> {
         // Find the next node to visit following the next nibble as index.
         let child_index = nibble_iter.next().expect("Ran out of nibbles");
 
@@ -427,7 +437,7 @@ where
             let leaf_node = tree_cache.get_node(&leaf.hash)?;
             Ok((leaf.hash, leaf_node))
         } else {
-            let new_internal_node: Node<K,V> = InternalNode::new(children).into();
+            let new_internal_node: Node<K, V> = InternalNode::new(children).into();
             // Cache this new internal node.
             tree_cache.put_node(new_internal_node.merkle_hash(), new_internal_node.clone())?;
             Ok((new_internal_node.merkle_hash(), new_internal_node))
@@ -439,12 +449,12 @@ where
     /// [`NodeKey`](node_type/struct.NodeKey.html).
     fn insert_at_leaf_node(
         node_key: NodeKey,
-        existing_leaf_node: LeafNode<K,V>,
+        existing_leaf_node: LeafNode<K, V>,
         nibble_iter: &mut NibbleIterator,
         key: SMTObject<K>,
         blob: Option<SMTObject<V>>,
         tree_cache: &mut TreeCache<R, K, V>,
-    ) -> Result<(NodeKey, Node<K,V>)> {
+    ) -> Result<(NodeKey, Node<K, V>)> {
         // We are on a leaf node but trying to insert another node, so we may diverge.
         // We always delete the existing leaf node here because it will not be referenced anyway
         // since this version.
@@ -453,8 +463,7 @@ where
         // visited part of the nibble iter of the incoming key and advances the existing leaf
         // nibble iterator by the length of that prefix.
         let mut visited_nibble_iter = nibble_iter.visited_nibbles();
-        let existing_leaf_nibble_path =
-            NibblePath::new(existing_leaf_node.key_hash().to_vec());
+        let existing_leaf_nibble_path = NibblePath::new(existing_leaf_node.key_hash().to_vec());
         let mut existing_leaf_nibble_iter = existing_leaf_nibble_path.nibbles();
         skip_common_prefix(&mut visited_nibble_iter, &mut existing_leaf_nibble_iter);
 
@@ -527,7 +536,7 @@ where
 
         let internal_node = InternalNode::new(children);
         let mut next_internal_node = internal_node.clone();
-        let internal_node: Node<K,V> = internal_node.into();
+        let internal_node: Node<K, V> = internal_node.into();
         tree_cache.put_node(internal_node.merkle_hash(), internal_node)?;
 
         for _i in 0..num_common_nibbles_below_internal {
@@ -541,11 +550,11 @@ where
             );
             let internal_node = InternalNode::new(children);
             next_internal_node = internal_node.clone();
-            let internal_node: Node<K,V> = internal_node.into();
+            let internal_node: Node<K, V> = internal_node.into();
             tree_cache.put_node(internal_node.merkle_hash(), internal_node)?;
         }
 
-        let next_internal_node: Node<K,V> = next_internal_node.into();
+        let next_internal_node: Node<K, V> = next_internal_node.into();
         Ok((next_internal_node.merkle_hash(), next_internal_node))
     }
 
@@ -553,8 +562,8 @@ where
     fn create_leaf_node(
         key: SMTObject<K>,
         blob: SMTObject<V>,
-        tree_cache: &mut TreeCache<R, K,V>,
-    ) -> Result<(NodeKey, Node<K,V>)> {
+        tree_cache: &mut TreeCache<R, K, V>,
+    ) -> Result<(NodeKey, Node<K, V>)> {
         // Get the underlying bytes of nibble_iter which must be a key, i.e., hashed account address
         // with `HashValue::LENGTH` bytes.
         let new_leaf_node = Node::new_leaf(key, blob);
@@ -564,7 +573,7 @@ where
     }
 
     /// Returns the account state blob (if applicable) and the corresponding merkle proof.
-    pub fn get_with_proof<GK:Into<SMTObject<K>>>(
+    pub fn get_with_proof<GK: Into<SMTObject<K>>>(
         &self,
         state_root_hash: HashValue,
         key: GK,
@@ -644,7 +653,7 @@ where
         let key_hash = rightmost_key_to_prove.merkle_hash();
         let (account, proof) = self.get_with_proof(state_root_hash, rightmost_key_to_prove)?;
         ensure!(account.is_some(), "rightmost_key_to_prove must exist.");
-        
+
         let siblings = proof
             .siblings()
             .iter()
@@ -664,7 +673,11 @@ where
     }
 
     #[cfg(test)]
-    pub fn get<GK:Into<SMTObject<K>>>(&self, state_root_hash: HashValue, key: GK) -> Result<Option<SMTObject<V>>> {
+    pub fn get<GK: Into<SMTObject<K>>>(
+        &self,
+        state_root_hash: HashValue,
+        key: GK,
+    ) -> Result<Option<SMTObject<V>>> {
         Ok(self.get_with_proof(state_root_hash, key)?.0)
     }
 }

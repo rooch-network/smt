@@ -4,14 +4,14 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{EncodeToObject, jellyfish_merkle::{mock_tree_store::{TestValue, TestKey}}};
-use super::*;
+use super::super::hash::{HashValue, SPARSE_MERKLE_PLACEHOLDER_HASH};
 use super::super::nibble_path::NibblePath;
-use proptest::prelude::*;
-use super::super::hash::{
-    SPARSE_MERKLE_PLACEHOLDER_HASH,
-    HashValue,
+use super::*;
+use crate::{
+    jellyfish_merkle::mock_tree_store::{TestKey, TestValue},
+    EncodeToObject,
 };
+use proptest::prelude::*;
 use std::{panic, rc::Rc};
 
 fn hash_internal(left: HashValue, right: HashValue) -> HashValue {
@@ -45,9 +45,11 @@ fn test_encode_decode() {
     // let nibble_path = NibblePath::new(vec![]);
 
     let leaf1_keys = gen_leaf_keys(&nibble_path, Nibble::from(1));
-    let leaf1_node: Node<TestKey,TestValue> = Node::new_leaf(leaf1_keys, TestValue::from(vec![0x00]));
+    let leaf1_node: Node<TestKey, TestValue> =
+        Node::new_leaf(leaf1_keys, TestValue::from(vec![0x00]));
     let leaf2_keys = gen_leaf_keys(&nibble_path, Nibble::from(2));
-    let leaf2_node: Node<TestKey, TestValue> = Node::new_leaf(leaf2_keys, TestValue::from(vec![0x01]));
+    let leaf2_node: Node<TestKey, TestValue> =
+        Node::new_leaf(leaf2_keys, TestValue::from(vec![0x01]));
 
     let mut children = Children::default();
     children.insert(Nibble::from(1), Child::new(leaf1_node.merkle_hash(), true));
@@ -619,7 +621,8 @@ impl BinaryTreeNode {
         left: BinaryTreeNode,
         right: BinaryTreeNode,
     ) -> Self {
-        let hash = SparseMerkleInternalNode::new(left.merkle_hash(), right.merkle_hash()).merkle_hash();
+        let hash =
+            SparseMerkleInternalNode::new(left.merkle_hash(), right.merkle_hash()).merkle_hash();
 
         Self::Internal(BinaryTreeInternalNode {
             begin: first_child_index,
@@ -639,7 +642,7 @@ impl BinaryTreeNode {
     }
 }
 
-impl SMTHash for BinaryTreeNode{
+impl SMTHash for BinaryTreeNode {
     fn merkle_hash(&self) -> HashValue {
         self.hash()
     }

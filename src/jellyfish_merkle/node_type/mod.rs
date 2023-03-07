@@ -16,8 +16,9 @@
 
 #[cfg(test)]
 mod node_type_test;
-use crate::{SMTObject, Key, Value};
-use super::{nibble::Nibble};
+use super::hash::*;
+use super::nibble::Nibble;
+use crate::{Key, SMTObject, Value};
 use anyhow::{ensure, Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::{FromPrimitive, ToPrimitive};
@@ -26,8 +27,7 @@ use num_traits::cast::FromPrimitive;
 use proptest::{collection::hash_map, prelude::*};
 #[cfg(any(test, feature = "fuzzing"))]
 use proptest_derive::Arbitrary;
-use serde::{Deserialize,Serialize};
-use super::hash::*;
+use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 use std::{
     collections::hash_map::HashMap,
@@ -130,8 +130,7 @@ impl SMTHash for InternalNode {
                 self.cached_hash.set(Some(hash));
                 hash
             }
-        } 
-        
+        }
     }
 }
 
@@ -408,7 +407,7 @@ pub(crate) fn get_child_and_sibling_half_start(n: Nibble, height: u8) -> (u8, u8
 
 /// Represents an account.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LeafNode<K, V>{
+pub struct LeafNode<K, V> {
     /// The origin key associated with this leaf node's Value.
     key: SMTObject<K>,
     /// The blob value associated with `key`.
@@ -416,11 +415,13 @@ pub struct LeafNode<K, V>{
     cached_hash: Cell<Option<HashValue>>,
 }
 
-impl<K,V> LeafNode<K, V>
-where K: Key, V: Value
+impl<K, V> LeafNode<K, V>
+where
+    K: Key,
+    V: Value,
 {
     /// Creates a new leaf node.
-    pub fn new<NK:Into<SMTObject<K>>, NV: Into<SMTObject<V>>>(key: NK, value: NV) -> Self {
+    pub fn new<NK: Into<SMTObject<K>>, NV: Into<SMTObject<V>>>(key: NK, value: NV) -> Self {
         Self {
             key: key.into(),
             value: value.into(),
@@ -439,7 +440,7 @@ where K: Key, V: Value
         }
     }
 
-     /// Gets the key
+    /// Gets the key
     pub fn key(&self) -> &SMTObject<K> {
         &self.key
     }
@@ -470,25 +471,30 @@ where K: Key, V: Value
     }
 
     pub fn deserialize(data: &[u8]) -> Result<Self> {
-        bcs::from_bytes(data).map_err(|e|e.into())
+        bcs::from_bytes(data).map_err(|e| e.into())
     }
 
-    pub fn into(self) -> (SMTObject<K>, SMTObject<V>){
+    pub fn into(self) -> (SMTObject<K>, SMTObject<V>) {
         (self.key, self.value)
     }
 }
 
 #[derive(Serialize, Deserialize)]
-struct RawKV{
+struct RawKV {
     key: Vec<u8>,
     value: Vec<u8>,
 }
 
-impl<K,V> Serialize for LeafNode<K,V> where K:Key, V:Value{
+impl<K, V> Serialize for LeafNode<K, V>
+where
+    K: Key,
+    V: Value,
+{
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
-        let wrapper = RawKV{
+        S: serde::Serializer,
+    {
+        let wrapper = RawKV {
             key: self.key.raw.clone(),
             value: self.value.raw.clone(),
         };
@@ -496,18 +502,28 @@ impl<K,V> Serialize for LeafNode<K,V> where K:Key, V:Value{
     }
 }
 
-impl<'de, K,V> Deserialize<'de> for LeafNode<K,V> where K:Key, V:Value{
+impl<'de, K, V> Deserialize<'de> for LeafNode<K, V>
+where
+    K: Key,
+    V: Value,
+{
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de> {
+        D: serde::Deserializer<'de>,
+    {
         let wrapper = RawKV::deserialize(deserializer)?;
-        Ok(LeafNode::new(K::from_raw(wrapper.key).map_err(serde::de::Error::custom)?, V::from_raw(wrapper.value).map_err(serde::de::Error::custom)?))
+        Ok(LeafNode::new(
+            K::from_raw(wrapper.key).map_err(serde::de::Error::custom)?,
+            V::from_raw(wrapper.value).map_err(serde::de::Error::custom)?,
+        ))
     }
 }
 
 /// Computes the hash of a [`LeafNode`].
-impl<K,V> SMTHash for LeafNode<K,V>
-where K:Key, V:Value
+impl<K, V> SMTHash for LeafNode<K, V>
+where
+    K: Key,
+    V: Value,
 {
     fn merkle_hash(&self) -> HashValue {
         SparseMerkleLeafNode::new(self.key.merkle_hash(), self.value.merkle_hash()).merkle_hash()
@@ -524,7 +540,7 @@ enum NodeTag {
 
 /// The concrete node type of [`JellyfishMerkleTree`](super::JellyfishMerkleTree).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Node<K,V> {
+pub enum Node<K, V> {
     /// Represents `null`.
     Null,
     /// A wrapper of [`InternalNode`].
@@ -533,8 +549,7 @@ pub enum Node<K,V> {
     Leaf(LeafNode<K, V>),
 }
 
-impl<K, V> From<InternalNode> for Node<K, V>
-{
+impl<K, V> From<InternalNode> for Node<K, V> {
     fn from(node: InternalNode) -> Self {
         Node::Internal(node)
     }
@@ -546,15 +561,16 @@ impl From<InternalNode> for Children {
     }
 }
 
-impl<K,V> From<LeafNode<K,V>> for Node<K,V>
-{
-    fn from(node: LeafNode<K,V>) -> Self {
+impl<K, V> From<LeafNode<K, V>> for Node<K, V> {
+    fn from(node: LeafNode<K, V>) -> Self {
         Node::Leaf(node)
     }
 }
 
 impl<K, V> Node<K, V>
-where K: Key, V: Value
+where
+    K: Key,
+    V: Value,
 {
     /// Creates the [`Null`](Node::Null) variant.
     pub fn new_null() -> Self {
@@ -567,7 +583,7 @@ where K: Key, V: Value
     }
 
     /// Creates the [`Leaf`](Node::Leaf) variant.
-    pub fn new_leaf<NK:Into<SMTObject<K>>, NV: Into<SMTObject<V>>>(key: NK, value: NV) -> Self {
+    pub fn new_leaf<NK: Into<SMTObject<K>>, NV: Into<SMTObject<V>>>(key: NK, value: NV) -> Self {
         Node::Leaf(LeafNode::new(key, value))
     }
 
@@ -612,7 +628,9 @@ where K: Key, V: Value
 }
 
 impl<K, V> SMTHash for Node<K, V>
-where K: Key, V: Value
+where
+    K: Key,
+    V: Value,
 {
     fn merkle_hash(&self) -> HashValue {
         match self {
@@ -640,7 +658,7 @@ impl SparseMerkleInternalNode {
 
 impl SMTHash for SparseMerkleInternalNode {
     fn merkle_hash(&self) -> HashValue {
-       merkle_hash(self.left_child, self.right_child)
+        merkle_hash(self.left_child, self.right_child)
     }
 }
 
@@ -652,7 +670,10 @@ pub struct SparseMerkleLeafNode {
 
 impl SparseMerkleLeafNode {
     pub fn new(key_hash: HashValue, value_hash: HashValue) -> Self {
-        SparseMerkleLeafNode { key_hash, value_hash }
+        SparseMerkleLeafNode {
+            key_hash,
+            value_hash,
+        }
     }
 }
 

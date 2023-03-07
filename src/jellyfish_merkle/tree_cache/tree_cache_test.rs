@@ -4,12 +4,12 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::jellyfish_merkle::mock_tree_store::{TestKey, TestValue, MockTestStore};
+use crate::jellyfish_merkle::mock_tree_store::{MockTestStore, TestKey, TestValue};
 
-use super::*;
 use super::super::{node_type::Node, NodeKey};
+use super::*;
 
-fn random_leaf_with_key() -> (Node<TestKey,TestValue>, NodeKey) {
+fn random_leaf_with_key() -> (Node<TestKey, TestValue>, NodeKey) {
     let node = Node::new_leaf(TestKey::random(), TestValue::random());
     let node_key = node.merkle_hash();
     (node, node_key)

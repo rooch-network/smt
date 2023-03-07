@@ -1,16 +1,18 @@
-
-use std::{fmt::{self, Debug}, str::FromStr};
+use bytes::Bytes;
+use hex::FromHex;
 use more_asserts::debug_assert_lt;
 use once_cell::sync::Lazy;
 #[cfg(any(test, feature = "fuzzing"))]
 use proptest_derive::Arbitrary;
 use rand::{rngs::OsRng, Rng};
 use serde::{de, ser};
+use std::{
+    fmt::{self, Debug},
+    str::FromStr,
+};
 use tiny_keccak::{Hasher, Sha3};
-use bytes::Bytes;
-use hex::FromHex;
 
-pub fn merkle_hash(left: HashValue, right: HashValue) -> HashValue{
+pub fn merkle_hash(left: HashValue, right: HashValue) -> HashValue {
     let mut value = left.to_vec();
     value.extend(right.to_vec());
     HashValue::sha3_256_of(&value)
@@ -65,7 +67,7 @@ impl HashValue {
         let hash: [u8; HashValue::LENGTH] = rng.gen();
         HashValue { hash }
     }
-  
+
     /// Convenience function that computes a `HashValue` internally equal to
     /// the sha3_256 of a byte buffer. It will handle hasher creation, data
     /// feeding and finalization.
@@ -103,7 +105,7 @@ impl HashValue {
 
     /// Returns the `index`-th bit in the bytes.
     pub fn bit(&self, index: usize) -> bool {
-        assert!(index < Self::LENGTH_IN_BITS); 
+        assert!(index < Self::LENGTH_IN_BITS);
         let pos = index / 8;
         let bit = 7 - index % 8;
         (self.hash[pos] >> bit) & 1 != 0
@@ -111,7 +113,7 @@ impl HashValue {
 
     /// Returns the `index`-th nibble in the bytes.
     pub fn nibble(&self, index: usize) -> u8 {
-        assert!(index < Self::LENGTH * 2); 
+        assert!(index < Self::LENGTH * 2);
         let pos = index / 2;
         let shift = if index % 2 == 0 { 4 } else { 0 };
         (self.hash[pos] >> shift) & 0x0f

@@ -12,17 +12,17 @@
 #[cfg(test)]
 mod iterator_test;
 
-use crate::{SMTObject, Key, Value};
+use super::hash::HashValue;
 use super::{
+    hash::SMTHash,
     nibble::Nibble,
     nibble_path::NibblePath,
     node_type::{InternalNode, Node, NodeKey},
-    TreeReader, hash::SMTHash,
+    TreeReader,
 };
+use crate::{Key, SMTObject, Value};
 use anyhow::{format_err, Result};
-use super::hash::HashValue;
 use std::marker::PhantomData;
-
 
 /// `NodeVisitInfo` keeps track of the status of an internal node during the iteration process. It
 /// indicates which ones of its children have been visited.
@@ -95,7 +95,7 @@ impl NodeVisitInfo {
 }
 
 /// The `JellyfishMerkleIterator` implementation.
-pub struct JellyfishMerkleIterator<'a, K, V, R: 'a + TreeReader<K,V>> {
+pub struct JellyfishMerkleIterator<'a, K, V, R: 'a + TreeReader<K, V>> {
     /// The storage engine from which we can read nodes using node keys.
     reader: &'a R,
 
@@ -116,13 +116,18 @@ pub struct JellyfishMerkleIterator<'a, K, V, R: 'a + TreeReader<K,V>> {
 
 impl<'a, K, V, R> JellyfishMerkleIterator<'a, K, V, R>
 where
-    R: 'a + TreeReader<K,V>,
-    K: Key,V: Value,
+    R: 'a + TreeReader<K, V>,
+    K: Key,
+    V: Value,
 {
     /// Constructs a new iterator. This puts the internal state in the correct position, so the
     /// following `next` call will yield the smallest key that is greater or equal to
     /// `starting_key`.
-    pub fn new(reader: &'a R, state_root_hash: HashValue, starting_key: SMTObject<K>) -> Result<Self> {
+    pub fn new(
+        reader: &'a R,
+        state_root_hash: HashValue,
+        starting_key: SMTObject<K>,
+    ) -> Result<Self> {
         let mut parent_stack = vec![];
         let mut done = false;
 
@@ -218,10 +223,11 @@ where
     }
 }
 
-impl<'a, K,V, R> Iterator for JellyfishMerkleIterator<'a, K,V, R>
+impl<'a, K, V, R> Iterator for JellyfishMerkleIterator<'a, K, V, R>
 where
-    R: 'a + TreeReader<K,V>,
-    K: Key,V: Value,
+    R: 'a + TreeReader<K, V>,
+    K: Key,
+    V: Value,
 {
     type Item = Result<(SMTObject<K>, SMTObject<V>)>;
 
@@ -282,7 +288,7 @@ where
 }
 
 /// The `JellyfishMerkleIntoIterator` implementation.
-pub struct JellyfishMerkleIntoIterator<K, V, R: TreeReader<K,V>> {
+pub struct JellyfishMerkleIntoIterator<K, V, R: TreeReader<K, V>> {
     /// The storage engine from which we can read nodes using node keys.
     reader: R,
 
@@ -301,10 +307,11 @@ pub struct JellyfishMerkleIntoIterator<K, V, R: TreeReader<K,V>> {
     value: PhantomData<V>,
 }
 
-impl<K,V, R> JellyfishMerkleIntoIterator<K, V, R>
+impl<K, V, R> JellyfishMerkleIntoIterator<K, V, R>
 where
-    R: TreeReader<K,V>,
-    K: Key,V: Value,
+    R: TreeReader<K, V>,
+    K: Key,
+    V: Value,
 {
     /// Constructs a new iterator. This puts the internal state in the correct position, so the
     /// following `next` call will yield the smallest key that is greater or equal to
@@ -404,10 +411,11 @@ where
     }
 }
 
-impl<K,V, R> Iterator for JellyfishMerkleIntoIterator<K, V, R>
+impl<K, V, R> Iterator for JellyfishMerkleIntoIterator<K, V, R>
 where
-    R: TreeReader<K,V>,
-    K: Key,V: Value,
+    R: TreeReader<K, V>,
+    K: Key,
+    V: Value,
 {
     type Item = Result<(SMTObject<K>, SMTObject<V>)>;
 

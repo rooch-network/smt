@@ -4,51 +4,67 @@
 // Copyright (c) The Starcoin Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{marker::PhantomData, collections::{BTreeMap, HashMap}};
-use parking_lot::{Mutex, RwLock};
-use jellyfish_merkle::{TreeReader, JellyfishMerkleTree, TreeUpdateBatch, node_type::{NodeKey, Node}, StaleNodeIndex};
 use anyhow::Result;
+use jellyfish_merkle::{
+    node_type::{Node, NodeKey},
+    JellyfishMerkleTree, StaleNodeIndex, TreeReader, TreeUpdateBatch,
+};
+use parking_lot::{Mutex, RwLock};
 use std::ops::DerefMut;
+use std::{
+    collections::{BTreeMap, HashMap},
+    marker::PhantomData,
+};
 
 mod jellyfish_merkle;
 pub mod smt_object;
 
-pub use jellyfish_merkle::{hash::{HashValue,SPARSE_MERKLE_PLACEHOLDER_HASH},proof::SparseMerkleProof};
-pub use smt_object::{Key, SMTObject, Value, EncodeToObject, DecodeToObject};
+pub use jellyfish_merkle::{
+    hash::{HashValue, SPARSE_MERKLE_PLACEHOLDER_HASH},
+    proof::SparseMerkleProof,
+};
+pub use smt_object::{DecodeToObject, EncodeToObject, Key, SMTObject, Value};
 
 /// Store the tree nodes
-pub trait NodeStore{
+pub trait NodeStore {
     fn get(&self, hash: &HashValue) -> Result<Option<Vec<u8>>>;
     fn put(&self, key: HashValue, node: Vec<u8>) -> Result<()>;
     fn write_nodes(&self, nodes: BTreeMap<HashValue, Vec<u8>>) -> Result<()>;
 }
 
-impl<K,V, NS> TreeReader<K,V> for NS where NS:NodeStore, K: Key, V: Value{
-    fn get_node_option(&self, node_key: &NodeKey) -> Result<Option<Node<K,V>>> {
-        self.get(node_key)?.map(|v|Node::<K,V>::decode(&v)).transpose()
+impl<K, V, NS> TreeReader<K, V> for NS
+where
+    NS: NodeStore,
+    K: Key,
+    V: Value,
+{
+    fn get_node_option(&self, node_key: &NodeKey) -> Result<Option<Node<K, V>>> {
+        self.get(node_key)?
+            .map(|v| Node::<K, V>::decode(&v))
+            .transpose()
     }
 }
 
 #[derive(Default)]
-pub struct InMemoryNodeStore{
+pub struct InMemoryNodeStore {
     inner: RwLock<HashMap<HashValue, Vec<u8>>>,
 }
 
-impl From<HashMap<HashValue, Vec<u8>>> for InMemoryNodeStore{
+impl From<HashMap<HashValue, Vec<u8>>> for InMemoryNodeStore {
     fn from(map: HashMap<HashValue, Vec<u8>>) -> Self {
-        Self{
-            inner: RwLock::new(map)
+        Self {
+            inner: RwLock::new(map),
         }
     }
 }
 
-impl NodeStore for InMemoryNodeStore{
+impl NodeStore for InMemoryNodeStore {
     fn get(&self, hash: &HashValue) -> Result<Option<Vec<u8>>> {
         Ok(self.inner.read().get(hash).cloned())
     }
 
     fn put(&self, key: HashValue, node: Vec<u8>) -> Result<()> {
-        self.inner.write().insert( key, node);
+        self.inner.write().insert(key, node);
         Ok(())
     }
 
@@ -57,7 +73,6 @@ impl NodeStore for InMemoryNodeStore{
         Ok(())
     }
 }
-
 
 #[derive(Clone)]
 pub struct StateCache<K, V> {
@@ -121,13 +136,12 @@ where
     }
 }
 
-
-struct CachedTreeReader<'a, K,V, NS> {
+struct CachedTreeReader<'a, K, V, NS> {
     store: &'a NS,
     cache: &'a StateCache<K, V>,
 }
 
-impl<'a, K, V, NS> TreeReader<K,V> for CachedTreeReader<'a, K,V,NS>
+impl<'a, K, V, NS> TreeReader<K, V> for CachedTreeReader<'a, K, V, NS>
 where
     NS: NodeStore,
     K: Key,
@@ -147,21 +161,25 @@ where
 }
 
 //TODO remove the cache, and support batch update in the jellyfish merkle tree
-pub struct SMTree<K, V, NS>{
+pub struct SMTree<K, V, NS> {
     node_store: NS,
     storage_root_hash: RwLock<HashValue>,
     updates: RwLock<BTreeMap<K, Option<V>>>,
-    cache: Mutex<StateCache<K,V>>,
+    cache: Mutex<StateCache<K, V>>,
     key: PhantomData<K>,
     value: PhantomData<V>,
 }
 
-impl<K, V, NS> SMTree<K, V, NS> where K: Key, V: Value, NS: NodeStore{
-
+impl<K, V, NS> SMTree<K, V, NS>
+where
+    K: Key,
+    V: Value,
+    NS: NodeStore,
+{
     /// Construct a new smt tree from provided `state_root_hash` with underline `node_store`
-    pub fn new(node_store: NS, state_root_hash: Option<HashValue>) -> Self{
+    pub fn new(node_store: NS, state_root_hash: Option<HashValue>) -> Self {
         let state_root_hash = state_root_hash.unwrap_or(*SPARSE_MERKLE_PLACEHOLDER_HASH);
-        SMTree{
+        SMTree {
             node_store,
             storage_root_hash: RwLock::new(state_root_hash),
             updates: RwLock::new(BTreeMap::new()),
@@ -174,7 +192,7 @@ impl<K, V, NS> SMTree<K, V, NS> where K: Key, V: Value, NS: NodeStore{
     /// get current root hash
     /// if any modification is not committed into state tree, the root hash is not changed.
     /// You can use `commit` to make current modification committed into local state tree.
-    pub fn root_hash(&self) -> HashValue{
+    pub fn root_hash(&self) -> HashValue {
         self.cache.lock().root_hash
     }
 
@@ -209,11 +227,11 @@ impl<K, V, NS> SMTree<K, V, NS> where K: Key, V: Value, NS: NodeStore{
     /// return value with it proof.
     /// NOTICE: this will only read from state tree.
     /// Any un-committed modification will not visible to the method.
-    pub fn get_with_proof(&self, key: K) -> Result<(Option<V>, SparseMerkleProof)>{
+    pub fn get_with_proof(&self, key: K) -> Result<(Option<V>, SparseMerkleProof)> {
         let mut cache_guard = self.cache.lock();
         let cache = cache_guard.deref_mut();
         let cur_root_hash = cache.root_hash;
-       
+
         let tree: JellyfishMerkleTree<K, V, NS> = JellyfishMerkleTree::new(&self.node_store);
         let key = key.into_object();
         let (data, proof) = tree.get_with_proof(cur_root_hash, key)?;
@@ -231,7 +249,12 @@ impl<K, V, NS> SMTree<K, V, NS> where K: Key, V: Value, NS: NodeStore{
         let mut guard = self.updates.write();
         let updates = guard
             .iter()
-            .map(|(k, v)| (k.clone().into_object(), v.clone().map(EncodeToObject::into_object)))
+            .map(|(k, v)| {
+                (
+                    k.clone().into_object(),
+                    v.clone().map(EncodeToObject::into_object),
+                )
+            })
             .collect::<Vec<_>>();
         let new_root_hash = self.updates(updates)?;
         guard.clear();
@@ -375,7 +398,7 @@ impl<K, V, NS> SMTree<K, V, NS> where K: Key, V: Value, NS: NodeStore{
     } */
 
     /// get last changes root_hash
-    pub fn last_change_sets(&self) -> Option<(HashValue, TreeUpdateBatch<K,V>)> {
+    pub fn last_change_sets(&self) -> Option<(HashValue, TreeUpdateBatch<K, V>)> {
         let cache_guard = self.cache.lock();
         cache_guard.change_set_list.last().cloned()
     }
@@ -395,11 +418,11 @@ impl<K, V, NS> SMTree<K, V, NS> where K: Key, V: Value, NS: NodeStore{
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
 
     #[test]
-    fn test_smt(){
+    fn test_smt() {
         let node_store = InMemoryNodeStore::default();
         let smt = SMTree::new(node_store, None);
         let key = "key";
@@ -409,10 +432,14 @@ mod tests{
         smt.flush().unwrap();
         let (result, proof) = smt.get_with_proof(key.to_string()).unwrap();
         assert_eq!(result.unwrap(), value.to_string());
-        assert!(proof.verify(smt.root_hash(), key.to_string(), Some(value.to_string())).is_ok());
+        assert!(proof
+            .verify(smt.root_hash(), key.to_string(), Some(value.to_string()))
+            .is_ok());
 
         let (result, proof) = smt.get_with_proof("key2".to_string()).unwrap();
         assert_eq!(result, None);
-        assert!(proof.verify::<String,String>(smt.root_hash(), "key2".to_string(), None).is_ok());
+        assert!(proof
+            .verify::<String, String>(smt.root_hash(), "key2".to_string(), None)
+            .is_ok());
     }
 }
