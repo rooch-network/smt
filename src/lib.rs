@@ -13,7 +13,7 @@ use jellyfish_merkle::{
 use parking_lot::RwLock;
 use std::{
     collections::{BTreeMap, HashMap},
-    marker::PhantomData,
+    marker::PhantomData, sync::Arc,
 };
 
 mod jellyfish_merkle;
@@ -53,15 +53,15 @@ where
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct InMemoryNodeStore {
-    inner: RwLock<HashMap<HashValue, Vec<u8>>>,
+    inner: Arc<RwLock<HashMap<HashValue, Vec<u8>>>>,
 }
 
 impl From<HashMap<HashValue, Vec<u8>>> for InMemoryNodeStore {
     fn from(map: HashMap<HashValue, Vec<u8>>) -> Self {
         Self {
-            inner: RwLock::new(map),
+            inner: Arc::new(RwLock::new(map)),
         }
     }
 }
